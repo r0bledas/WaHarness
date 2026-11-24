@@ -76,3 +76,8 @@ tmp/
 Thumbs.db
 ehthumbs.db
 [Dd]esktop.ini
+
+# Node & Reference Repositories
+node_modules/
+auth_info/
+references/
