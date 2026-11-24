@@ -1,6 +1,6 @@
 {
   "name": "waharness",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Zero-Rated AI Agent Terminal and Remote Execution Engine over WhatsApp",
   "main": "cli/tui.js",
   "bin": {
