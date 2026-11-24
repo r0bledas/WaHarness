@@ -4,8 +4,70 @@ const readline = require("readline");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const https = require("https");
 const WhatsAppTransport = require("./transport");
 const { executeCommand, readFile, writeFile, editFile, undoLastEdit, listDirectory } = require("./tools");
+
+const APP_VERSION = "1.2.2";
+const CONFIG_DIR = path.join(os.homedir(), ".waharness");
+const CONFIG_PATH = path.join(CONFIG_DIR, "config.json");
+
+function loadUserConfig() {
+    try {
+        if (fs.existsSync(CONFIG_PATH)) {
+            return JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8")) || {};
+        }
+    } catch (_) {}
+    return {};
+}
+
+function saveUserConfig(cfg) {
+    try {
+        fs.mkdirSync(CONFIG_DIR, { recursive: true });
+        fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2), "utf-8");
+    } catch (_) {}
+}
+
+function isNewerVersion(latest, current) {
+    const a = String(latest || "").replace(/^v/i, "").split(".").map((n) => parseInt(n, 10) || 0);
+    const b = String(current || "").replace(/^v/i, "").split(".").map((n) => parseInt(n, 10) || 0);
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+        if ((a[i] || 0) > (b[i] || 0)) return true;
+        if ((a[i] || 0) < (b[i] || 0)) return false;
+    }
+    return false;
+}
+
+function fetchLatestReleaseVersion(timeoutMs = 4000) {
+    return new Promise((resolve) => {
+        const req = https.get(
+            "https://api.github.com/repos/r0bledas/WaHarness/tags?per_page=1",
+            { headers: { "User-Agent": `WaHarness/${APP_VERSION}` }, timeout: timeoutMs },
+            (res) => {
+                if (res.statusCode !== 200) {
+                    res.resume();
+                    return resolve(null);
+                }
+                let data = "";
+                res.on("data", (chunk) => (data += chunk));
+                res.on("end", () => {
+                    try {
+                        const tags = JSON.parse(data);
+                        if (Array.isArray(tags) && tags[0] && tags[0].name) {
+                            return resolve(String(tags[0].name).replace(/^v/i, ""));
+                        }
+                    } catch (_) {}
+                    resolve(null);
+                });
+            }
+        );
+        req.on("error", () => resolve(null));
+        req.on("timeout", () => {
+            req.destroy();
+            resolve(null);
+        });
+    });
+}
 
 let qrcode = null;
 try {
@@ -125,6 +187,7 @@ const SLASH_COMMANDS = [
     { cmd: "/cd", title: "Change directory", desc: "Usage: /cd <path>" },
     { cmd: "/undo", title: "Undo last edit", desc: "Revert the last agent file edit" },
     { cmd: "/status", title: "Session status", desc: "Inspect tunnel, JID, model & workspace" },
+    { cmd: "/update", title: "Check & install updates", desc: "Check latest release & run brew upgrade waharness" },
     { cmd: "/clear", title: "Clear screen", desc: "Return to centered Home view" },
     { cmd: "/help", title: "Shortcuts & help", desc: "Show commands, !shell, @file & keys" },
     { cmd: "/exit", title: "Exit WaHarness", desc: "Quit WaHarness TUI" }
@@ -212,10 +275,12 @@ function wrapText(text, maxWidth) {
 
 class WaHarnessTUI {
     constructor() {
+        const saved = loadUserConfig();
         this.cwd = process.cwd();
-        this.activeModel = "gemini-4-argon-medium";
+        this.activeModel = saved.model || "gemini-4-argon-medium";
         this.mode = "build"; // "build" | "plan"
-        this.themeName = "opencode";
+        this.themeName = (saved.theme && THEMES[saved.theme]) ? saved.theme : "opencode";
+        this.updateAvailable = null;
         this.transport = new WhatsAppTransport();
 
         this.messages = [];
@@ -265,6 +330,30 @@ class WaHarnessTUI {
         }, durationMs);
     }
 
+    persistPreferences() {
+        saveUserConfig({
+            model: this.activeModel,
+            theme: this.themeName
+        });
+    }
+
+    async checkForUpdates(verbose = false) {
+        const latest = await fetchLatestReleaseVersion(4000);
+        if (latest && isNewerVersion(latest, APP_VERSION)) {
+            this.updateAvailable = latest;
+            if (verbose) {
+                this.showToast(`Update available: v${latest} (run /update to install)`);
+            } else {
+                this.render();
+            }
+            return latest;
+        }
+        if (verbose) {
+            this.showToast(latest ? `WaHarness v${APP_VERSION} is up to date.` : "Could not reach GitHub (offline / zero-rate).");
+        }
+        return null;
+    }
+
     async start() {
         process.stdout.write("\x1b[?1049h\x1b[?25l\x1b[2J\x1b[H");
         process.on("exit", () => {
@@ -273,6 +362,7 @@ class WaHarnessTUI {
 
         this.setupRawInput();
         process.stdout.on("resize", () => this.render());
+        this.checkForUpdates(false);
 
         this.transport.on("qr", (qr) => {
             if (qrcode) {
@@ -730,9 +820,11 @@ class WaHarnessTUI {
             if (picked) {
                 if (type === "model") {
                     this.activeModel = picked.id;
+                    this.persistPreferences();
                     this.showToast(`Model switched to ${picked.id}`);
                 } else if (type === "theme") {
                     this.themeName = picked.id;
+                    this.persistPreferences();
                     this.showToast(`Theme set to ${THEMES[picked.id].name}`);
                 } else if (type === "command") {
                     if (picked.id === "/cd") {
@@ -893,9 +985,11 @@ class WaHarnessTUI {
                     const matched = this.findModelByQuery(arg);
                     if (matched) {
                         this.activeModel = matched.id;
+                        this.persistPreferences();
                         this.showToast(`Switched model to ${matched.id}`);
                     } else {
                         this.activeModel = arg;
+                        this.persistPreferences();
                         this.showToast(`Switched model to ${arg}`);
                     }
                 } else {
@@ -907,10 +1001,32 @@ class WaHarnessTUI {
             case "/themes":
                 if (arg && THEMES[arg.toLowerCase()]) {
                     this.themeName = arg.toLowerCase();
+                    this.persistPreferences();
                     this.showToast(`Theme switched to ${this.T.name}`);
                 } else {
                     this.openThemeModal();
                 }
+                break;
+
+            case "/update":
+                if (arg.toLowerCase() === "check") {
+                    this.showToast("Checking GitHub for updates...");
+                    await this.checkForUpdates(true);
+                    return;
+                }
+                this.inFlight = true;
+                this.startSpinner("Updating WaHarness via Homebrew (brew update && brew upgrade waharness)...");
+                const updRes = await executeCommand("brew update && brew upgrade waharness", this.cwd, 180);
+                this.stopSpinner();
+                this.inFlight = false;
+                if (updRes.code === 0) {
+                    this.updateAvailable = null;
+                    this.showToast("Upgrade complete! Run /exit then waharness to use the new version.", 5000);
+                } else {
+                    const errMsg = (updRes.err || updRes.out || "Upgrade failed").split("\n")[0];
+                    this.showToast(`Update failed: ${clipPlain(errMsg, 55)}`, 5000);
+                }
+                this.render();
                 break;
 
             case "/mode":
@@ -1477,7 +1593,11 @@ class WaHarnessTUI {
                     const logoRow = `${T.muted}${leftPart}${RESET}${gapPart}${T.text}${BOLD}${rightPart}${RESET}`;
                     block.push(centerLine(logoRow, 46));
                 }
-                block.push("");
+                if (this.updateAvailable) {
+                    block.push(centerLine(`${T.primary}/update${RESET} ${T.muted}to install v${this.updateAvailable} (current v${APP_VERSION})${RESET}`));
+                } else {
+                    block.push("");
+                }
                 for (const pLine of promptBox) {
                     block.push(centerLine(pLine, boxWidth));
                 }
@@ -1532,7 +1652,10 @@ class WaHarnessTUI {
             ? `${T.success}●${RESET} ${T.muted}zero-rate tunnel${RESET}`
             : `${T.primary}◌${RESET} ${T.muted}connecting...${RESET}`;
         const footLeft = `  ${T.muted}${shortPath(this.cwd)}${RESET}`;
-        const footRight = `${connBadge} ${T.subtle}·${RESET} ${T.muted}v1.2.1${RESET}  `;
+        const verTag = this.updateAvailable
+            ? `${T.primary}v${APP_VERSION} -> v${this.updateAvailable} (/update)${RESET}`
+            : `${T.muted}v${APP_VERSION}${RESET}`;
+        const footRight = `${connBadge} ${T.subtle}·${RESET} ${verTag}  `;
         const footGap = Math.max(1, W - 1 - visibleLen(footLeft) - visibleLen(footRight));
         screen[H - 1] = fitAnsi(footLeft + " ".repeat(footGap) + footRight, W - 1);
 
@@ -1557,7 +1680,7 @@ class WaHarnessTUI {
 }
 
 if (process.argv.includes("--version") || process.argv.includes("-v")) {
-    console.log("waharness 1.2.1");
+    console.log(`waharness ${APP_VERSION}`);
     process.exit(0);
 }
 
