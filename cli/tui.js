@@ -22,7 +22,7 @@ const C = {
 
 const BANNER = `
 ${C.cyan}${C.bright}┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃                      W A H A R N E S S  v1.0.3                   ┃
+┃                      W A H A R N E S S  v1.0.4                   ┃
 ┃       Zero-Rated AI Agent Terminal • Isolated T450 Session       ┃
 ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛${C.reset}
 ${C.gray}Engine: ${C.green}AGY (Gemini/Claude) & Hermes (DeepSeek)${C.gray} | Channel: ${C.blue}Isolated Self-Chat (!WAH_)${C.reset}
