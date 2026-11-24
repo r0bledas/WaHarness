@@ -9,28 +9,33 @@ class WhatsAppTransport extends EventEmitter {
         super();
         const homeDir = os.homedir();
         const defaultAuth = path.join(homeDir, ".waharness", "auth_info");
-        
-        // Check if legacy auth_info exists in Downloads or local
-        const legacyDownloads = path.join(homeDir, "Downloads", "WaHarness-Mac", "auth_info");
-        const localAuth = path.join(__dirname, "../auth_info");
+        const credsFile = path.join(defaultAuth, "creds.json");
 
-        if (!fs.existsSync(defaultAuth)) {
-            if (fs.existsSync(legacyDownloads)) {
-                fs.mkdirSync(path.join(homeDir, ".waharness"), { recursive: true });
-                fs.cpSync(legacyDownloads, defaultAuth, { recursive: true });
-            } else if (fs.existsSync(localAuth)) {
-                fs.mkdirSync(path.join(homeDir, ".waharness"), { recursive: true });
-                fs.cpSync(localAuth, defaultAuth, { recursive: true });
+        // Auto-migrate existing pairing credentials if creds.json is missing
+        const candidates = [
+            path.join(homeDir, "Downloads", "WaHarness-Mac", "auth_info"),
+            path.join(process.cwd(), "auth_info"),
+            path.join(__dirname, "../auth_info")
+        ];
+
+        if (!fs.existsSync(credsFile)) {
+            for (const candidate of candidates) {
+                if (fs.existsSync(path.join(candidate, "creds.json"))) {
+                    fs.mkdirSync(defaultAuth, { recursive: true });
+                    fs.cpSync(candidate, defaultAuth, { recursive: true });
+                    break;
+                }
             }
         }
 
         this.authDir = authDir || defaultAuth;
         this.sock = null;
         this.connected = false;
-        this.targetChat = null;
+        this.targetChat = process.env.WAHARNESS_TARGET_JID || null;
     }
 
     async init() {
+        fs.mkdirSync(this.authDir, { recursive: true });
         const { state, saveCreds } = await useMultiFileAuthState(this.authDir);
 
         this.sock = makeWASocket({
@@ -56,18 +61,45 @@ class WhatsAppTransport extends EventEmitter {
                 }
             } else if (connection === "open") {
                 this.connected = true;
-                this.emit("ready");
+                // Default targetChat to the user's own WhatsApp account (self-chat)
+                const rawUser = this.sock?.user?.id || "";
+                if (rawUser) {
+                    const phone = rawUser.split(":")[0].split("@")[0];
+                    if (phone) {
+                        this.targetChat = `${phone}@s.whatsapp.net`;
+                    }
+                }
+                if (!this.targetChat) {
+                    this.targetChat = process.env.WAHARNESS_TARGET_JID || null;
+                }
+                this.emit("ready", { targetChat: this.targetChat });
             }
         });
 
         this.sock.ev.on("messages.upsert", async (m) => {
-            const msg = m.messages[0];
-            if (!msg || !msg.message) return;
-            const from = msg.key.remoteJid;
-            const text = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
+            for (const msg of (m.messages || [])) {
+                if (!msg || !msg.message) continue;
+                const from = msg.key.remoteJid;
+                const text = (
+                    msg.message.conversation ||
+                    msg.message.extendedTextMessage?.text ||
+                    ""
+                ).trim();
+                if (!text) continue;
 
-            this.targetChat = from;
-            this.emit("message", { from, text, raw: msg });
+                // Strictly filter for WaHarness protocol packets from T450 Brain
+                // so normal personal WhatsApp chats never leak into the CLI terminal
+                if (
+                    text.startsWith("!WAH_STREAM:") ||
+                    text.startsWith("!WAH_TOOL_REQ:") ||
+                    text.startsWith("!WAH_DONE:") ||
+                    text.startsWith("!CLI_STREAM:") ||
+                    text.startsWith("!CLI_TOOL_REQ:") ||
+                    text.startsWith("!CLI_DONE:")
+                ) {
+                    this.emit("message", { from, text, raw: msg });
+                }
+            }
         });
     }
 

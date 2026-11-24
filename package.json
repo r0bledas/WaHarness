@@ -1,6 +1,6 @@
 {
   "name": "waharness",
-  "version": "1.0.1",
+  "version": "1.0.3",
   "description": "Zero-Rated AI Agent Terminal and Remote Execution Engine over WhatsApp",
   "main": "cli/tui.js",
   "bin": {
@@ -22,6 +22,7 @@
   "license": "MIT",
   "dependencies": {
     "@whiskeysockets/baileys": "^7.0.0-rc14",
-    "pino": "^9.0.0"
+    "pino": "^9.0.0",
+    "qrcode-terminal": "^0.12.0"
   }
 }
