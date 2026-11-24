@@ -44,7 +44,7 @@ function renderOpenCodeHeader(cwd, model, connected) {
     const ws = shortPath(cwd);
     return [
         "",
-        `  ${C.slate}█░█░█ ▄▀█ ${C.white}${C.bold}█░█ ▄▀█ █▀█ █▄░█ █▀▀ █▀ █▀${C.reset}   ${C.darkGray}v1.0.6${C.reset}`,
+        `  ${C.slate}█░█░█ ▄▀█ ${C.white}${C.bold}█░█ ▄▀█ █▀█ █▄░█ █▀▀ █▀ █▀${C.reset}   ${C.darkGray}v1.0.7${C.reset}`,
         `  ${C.slate}▀▄▀▄▀ █▀█ ${C.white}${C.bold}█▀█ █▀█ █▀▄ █░▀█ ██▄ ▄█ ▄█${C.reset}   ${statusDot} ${C.slate}zero-rate tunnel${C.reset}`,
         "",
         `  ${C.darkGray}┌──────────────────────────────────────────────────────────────┐${C.reset}`,
@@ -129,8 +129,15 @@ class WaHarnessCLI {
             const frame = SPINNER_FRAMES[this.spinnerFrame % SPINNER_FRAMES.length];
             this.spinnerFrame++;
             const elapsed = ((Date.now() - this.spinnerStart) / 1000).toFixed(1);
+            const cols = process.stdout.columns || 80;
+            const suffix = ` (${elapsed}s · esc to cancel)`;
+            const maxStatusLen = Math.max(16, cols - suffix.length - 10);
+            const cleanStatus = String(this.spinnerStatus || "").replace(/\s+/g, " ").trim();
+            const clippedStatus = cleanStatus.length > maxStatusLen
+                ? cleanStatus.slice(0, maxStatusLen - 1) + "…"
+                : cleanStatus;
             process.stdout.write(
-                `\r\x1b[2K  ${C.purple}┃${C.reset}  ${C.amber}${frame}${C.reset} ${C.slate}${this.spinnerStatus}${C.reset} ${C.darkGray}(${elapsed}s · esc to cancel)${C.reset}`
+                `\r\x1b[2K  ${C.purple}┃${C.reset}  ${C.amber}${frame}${C.reset} ${C.slate}${clippedStatus}${C.reset}${C.darkGray}${suffix}${C.reset}`
             );
         };
         render();
@@ -466,8 +473,15 @@ class WaHarnessCLI {
 
                 this.stopSpinner();
                 const badge = result.error ? `${C.red}✗` : `${C.green}✓`;
+                const durStr = result.dur ? ` (${result.dur}s)` : "";
+                const cols = process.stdout.columns || 80;
+                const maxDetail = Math.max(20, cols - req.action.length - durStr.length - 12);
+                const oneLineDetail = String(detail).replace(/\s+/g, " ").trim();
+                const clippedDetail = oneLineDetail.length > maxDetail
+                    ? oneLineDetail.slice(0, maxDetail - 1) + "…"
+                    : oneLineDetail;
                 const dur = result.dur ? ` ${C.darkGray}(${result.dur}s)${C.reset}` : "";
-                console.log(`  ${C.purple}┃${C.reset}  ${badge} ${C.slate}${req.action}${C.reset} ${C.gray}${detail}${C.reset}${dur}`);
+                console.log(`  ${C.purple}┃${C.reset}  ${badge} ${C.slate}${req.action}${C.reset} ${C.gray}${clippedDetail}${C.reset}${dur}`);
                 this.startSpinner(`Thinking (${this.activeModel})...`);
 
                 const replyPkt = `${pfx}TOOL_RES:` + JSON.stringify({
@@ -513,7 +527,7 @@ class WaHarnessCLI {
 }
 
 if (process.argv.includes("--version") || process.argv.includes("-v")) {
-    console.log("waharness 1.0.6");
+    console.log("waharness 1.0.7");
     process.exit(0);
 }
 
