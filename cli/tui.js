@@ -12,36 +12,43 @@ try {
     qrcode = require("qrcode-terminal");
 } catch (_) {}
 
-// OpenCode System & Theme Palettes (clean native ANSI by default so macOS Terminal, iTerm2, Ghostty, and Kitty all render with crisp contrast and transparent backgrounds)
+const RESET = "\x1b[0m";
+const BOLD = "\x1b[1m";
+const DIM = "\x1b[2m";
+
 const THEMES = {
-    system: {
-        name: "system (OpenCode Native ANSI)",
-        primary: "\x1b[93m",      // Bright Warm Yellow / Amber
-        secondary: "\x1b[94m",    // Bright Soft Blue
-        accent: "\x1b[95m",       // Bright Lavender / Magenta
-        info: "\x1b[96m",         // Bright Cyan
-        success: "\x1b[92m",      // Bright Mint Green
-        error: "\x1b[91m",        // Bright Coral Red
-        text: "\x1b[97m",         // Bright White
-        muted: "\x1b[90m",        // Readable Muted Gray (ANSI Bright Black)
-        border: "\x1b[90m",       // Clean Subtle Border
-        selectedBg: "\x1b[7m"     // Native Terminal Inverse Video highlight
-    },
     opencode: {
-        name: "opencode (Warm Peach & Lavender)",
-        primary: "\x1b[38;5;216m",
-        secondary: "\x1b[38;5;111m",
-        accent: "\x1b[38;5;141m",
-        info: "\x1b[38;5;73m",
-        success: "\x1b[38;5;114m",
-        error: "\x1b[38;5;168m",
-        text: "\x1b[38;5;255m",
-        muted: "\x1b[38;5;246m",
-        border: "\x1b[38;5;242m",
-        selectedBg: "\x1b[48;5;238m"
+        name: "OpenCode Default",
+        primary: "\x1b[38;5;215m",     // Warm Peach/Amber (#fab283)
+        secondary: "\x1b[38;5;111m",   // Soft Blue (#5c9cf5)
+        accent: "\x1b[38;5;141m",      // Lavender (#9d7cd8)
+        info: "\x1b[38;5;73m",         // Teal Cyan (#56b6c2)
+        success: "\x1b[38;5;114m",     // Mint Green (#7fd88f)
+        error: "\x1b[38;5;203m",       // Coral Red (#e06c75)
+        text: "\x1b[97m",              // Crisp White
+        muted: "\x1b[38;5;245m",       // Readable Muted Gray (#8a8a8a)
+        subtle: "\x1b[38;5;240m",      // Subtle Border Gray (#585858)
+        panelBg: "\x1b[48;5;235m",     // Subtle Panel Fill
+        modalBg: "\x1b[48;5;235m",     // Popup Surface Fill
+        selectBg: "\x1b[48;5;215m\x1b[38;5;232m" // Selected Row Pill (Amber bg, dark fg)
+    },
+    system: {
+        name: "System Native ANSI",
+        primary: "\x1b[93m",
+        secondary: "\x1b[94m",
+        accent: "\x1b[95m",
+        info: "\x1b[96m",
+        success: "\x1b[92m",
+        error: "\x1b[91m",
+        text: "\x1b[97m",
+        muted: "\x1b[90m",
+        subtle: "\x1b[90m",
+        panelBg: "",
+        modalBg: "",
+        selectBg: "\x1b[7m"
     },
     tokyonight: {
-        name: "tokyonight (Cyan & Purple)",
+        name: "Tokyo Night",
         primary: "\x1b[38;5;117m",
         secondary: "\x1b[38;5;141m",
         accent: "\x1b[38;5;176m",
@@ -50,11 +57,13 @@ const THEMES = {
         error: "\x1b[38;5;204m",
         text: "\x1b[38;5;254m",
         muted: "\x1b[38;5;245m",
-        border: "\x1b[38;5;241m",
-        selectedBg: "\x1b[48;5;238m"
+        subtle: "\x1b[38;5;240m",
+        panelBg: "\x1b[48;5;235m",
+        modalBg: "\x1b[48;5;235m",
+        selectBg: "\x1b[48;5;117m\x1b[38;5;232m"
     },
     catppuccin: {
-        name: "catppuccin (Mocha Mauve & Peach)",
+        name: "Catppuccin Mocha",
         primary: "\x1b[38;5;216m",
         secondary: "\x1b[38;5;183m",
         accent: "\x1b[38;5;183m",
@@ -63,53 +72,91 @@ const THEMES = {
         error: "\x1b[38;5;211m",
         text: "\x1b[38;5;255m",
         muted: "\x1b[38;5;246m",
-        border: "\x1b[38;5;242m",
-        selectedBg: "\x1b[48;5;238m"
+        subtle: "\x1b[38;5;240m",
+        panelBg: "\x1b[48;5;235m",
+        modalBg: "\x1b[48;5;235m",
+        selectBg: "\x1b[48;5;183m\x1b[38;5;232m"
     }
 };
 
-const RESET = "\x1b[0m";
-const BOLD = "\x1b[1m";
-const DIM = "\x1b[2m";
-
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
-// All 29 Live T450 Models
-const MODEL_CATALOG = [
-    // Google Gemini 4
-    { id: "gemini-4-argon-medium", label: "Gemini 4 Argon (Medium)", group: "Gemini 4" },
-    { id: "gemini-4-argon-high", label: "Gemini 4 Argon (High)", group: "Gemini 4" },
-    { id: "gemini-4-argon-low", label: "Gemini 4 Argon (Low)", group: "Gemini 4" },
-    { id: "gemini-4-neon-high", label: "Gemini 4 Neon (High)", group: "Gemini 4" },
-    { id: "gemini-4-neon-xhigh", label: "Gemini 4 Neon (XHigh)", group: "Gemini 4" },
-    { id: "gemini-4-neon-medium", label: "Gemini 4 Neon (Medium)", group: "Gemini 4" },
-    { id: "gemini-4-neon-low", label: "Gemini 4 Neon (Low)", group: "Gemini 4" },
-    { id: "gemini-4-carbon-high", label: "Gemini 4 Carbon (High)", group: "Gemini 4" },
-    { id: "gemini-4-carbon-medium", label: "Gemini 4 Carbon (Medium)", group: "Gemini 4" },
-    { id: "gemini-4-carbon-low", label: "Gemini 4 Carbon (Low)", group: "Gemini 4" },
-    { id: "gemini-4-hydrogen-high", label: "Gemini 4 Hydrogen (High)", group: "Gemini 4" },
-    { id: "gemini-4-hydrogen-xhigh", label: "Gemini 4 Hydrogen (XHigh)", group: "Gemini 4" },
-    { id: "gemini-4-hydrogen-medium", label: "Gemini 4 Hydrogen (Medium)", group: "Gemini 4" },
-    { id: "gemini-4-hydrogen-low", label: "Gemini 4 Hydrogen (Low)", group: "Gemini 4" },
-    { id: "gemini-pro-orchestrator-neon", label: "Orchestrator (Neon)", group: "Gemini 4" },
-    { id: "gemini-pro-orchestrator", label: "Orchestrator (Carbon)", group: "Gemini 4" },
-    { id: "gemini-pro-orchestrator-argon", label: "Orchestrator (Argon)", group: "Gemini 4" },
-    { id: "gemini-3.8-flash-high", label: "Gemini 3.8 Flash (High)", group: "Gemini 3.8" },
-    { id: "gemini-3.8-flash-medium", label: "Gemini 3.8 Flash (Medium)", group: "Gemini 3.8" },
-    { id: "gemini-3.8-flash-low", label: "Gemini 3.8 Flash (Low)", group: "Gemini 3.8" },
-    // Anthropic Claude 5.5
-    { id: "claude-opus-5-5-high", label: "Claude Opus 5.5 (High)", group: "Claude 5.5" },
-    { id: "claude-opus-5-5-medium", label: "Claude Opus 5.5 (Medium)", group: "Claude 5.5" },
-    { id: "claude-opus-5-5-low", label: "Claude Opus 5.5 (Low)", group: "Claude 5.5" },
-    { id: "claude-sonnet-5-5-high", label: "Claude Sonnet 5.5 (High)", group: "Claude 5.5" },
-    { id: "claude-sonnet-5-5-medium", label: "Claude Sonnet 5.5 (Medium)", group: "Claude 5.5" },
-    { id: "claude-sonnet-5-5-low", label: "Claude Sonnet 5.5 (Low)", group: "Claude 5.5" },
-    // Hermes DeepSeek
-    { id: "deepseek-v4-pro", label: "DeepSeek V4 Pro (Hermes)", group: "DeepSeek" },
-    { id: "deepseek-flash", label: "DeepSeek V4.1 Flash (Hermes)", group: "DeepSeek" },
-    // OpenAI OSS
-    { id: "gpt-oss-120b-medium", label: "GPT-OSS 120B (Medium)", group: "OpenAI OSS" }
+const LOGO_LINES = [
+    ["█░█░█ ▄▀█ ", "█░█ ▄▀█ █▀█ █▄░█ █▀▀ █▀ █▀"],
+    ["▀▄▀▄▀ █▀█ ", "█▀█ █▀█ █▀▄ █░▀█ ██▄ ▄█ ▄█"],
+    ["▀▀░▀▀ ▀░▀ ", "▀░▀ ▀░▀ ▀░▀ ▀░░▀ ▀▀▀ ▀▀ ▀▀"]
 ];
+
+const PLACEHOLDERS = [
+    "Fix a TODO in the codebase",
+    "What is the tech stack of this project?",
+    "Explain @package.json or run !git status"
+];
+
+const MODEL_CATALOG = [
+    { id: "gemini-4-argon-medium", label: "Gemini 4 Argon (Medium)", provider: "Google AGY" },
+    { id: "gemini-4-argon-high", label: "Gemini 4 Argon (High)", provider: "Google AGY" },
+    { id: "gemini-4-argon-low", label: "Gemini 4 Argon (Low)", provider: "Google AGY" },
+    { id: "gemini-4-neon-high", label: "Gemini 4 Neon (High)", provider: "Google AGY" },
+    { id: "gemini-4-neon-xhigh", label: "Gemini 4 Neon (XHigh)", provider: "Google AGY" },
+    { id: "gemini-4-neon-medium", label: "Gemini 4 Neon (Medium)", provider: "Google AGY" },
+    { id: "gemini-4-neon-low", label: "Gemini 4 Neon (Low)", provider: "Google AGY" },
+    { id: "gemini-4-carbon-high", label: "Gemini 4 Carbon (High)", provider: "Google AGY" },
+    { id: "gemini-4-carbon-medium", label: "Gemini 4 Carbon (Medium)", provider: "Google AGY" },
+    { id: "gemini-4-carbon-low", label: "Gemini 4 Carbon (Low)", provider: "Google AGY" },
+    { id: "gemini-4-hydrogen-high", label: "Gemini 4 Hydrogen (High)", provider: "Google AGY" },
+    { id: "gemini-4-hydrogen-xhigh", label: "Gemini 4 Hydrogen (XHigh)", provider: "Google AGY" },
+    { id: "gemini-4-hydrogen-medium", label: "Gemini 4 Hydrogen (Medium)", provider: "Google AGY" },
+    { id: "gemini-4-hydrogen-low", label: "Gemini 4 Hydrogen (Low)", provider: "Google AGY" },
+    { id: "gemini-pro-orchestrator-neon", label: "Orchestrator (Neon)", provider: "Google AGY" },
+    { id: "gemini-pro-orchestrator", label: "Orchestrator (Carbon)", provider: "Google AGY" },
+    { id: "gemini-pro-orchestrator-argon", label: "Orchestrator (Argon)", provider: "Google AGY" },
+    { id: "gemini-3.8-flash-high", label: "Gemini 3.8 Flash (High)", provider: "Google AGY" },
+    { id: "gemini-3.8-flash-medium", label: "Gemini 3.8 Flash (Medium)", provider: "Google AGY" },
+    { id: "gemini-3.8-flash-low", label: "Gemini 3.8 Flash (Low)", provider: "Google AGY" },
+    { id: "claude-opus-5-5-high", label: "Claude Opus 5.5 (High)", provider: "Anthropic AGY" },
+    { id: "claude-opus-5-5-medium", label: "Claude Opus 5.5 (Medium)", provider: "Anthropic AGY" },
+    { id: "claude-opus-5-5-low", label: "Claude Opus 5.5 (Low)", provider: "Anthropic AGY" },
+    { id: "claude-sonnet-5-5-high", label: "Claude Sonnet 5.5 (High)", provider: "Anthropic AGY" },
+    { id: "claude-sonnet-5-5-medium", label: "Claude Sonnet 5.5 (Medium)", provider: "Anthropic AGY" },
+    { id: "claude-sonnet-5-5-low", label: "Claude Sonnet 5.5 (Low)", provider: "Anthropic AGY" },
+    { id: "deepseek-v4-pro", label: "DeepSeek V4 Pro", provider: "Hermes" },
+    { id: "deepseek-flash", label: "DeepSeek V4.1 Flash", provider: "Hermes" },
+    { id: "gpt-oss-120b-medium", label: "GPT-OSS 120B (Medium)", provider: "OpenAI OSS" }
+];
+
+const SLASH_COMMANDS = [
+    { cmd: "/models", title: "Switch model", desc: "Open centered model selector popup (29 live T450 models)" },
+    { cmd: "/mode", title: "Toggle Build / Plan mode", desc: "Switch between Build (read/write) and Plan (read-only) agent" },
+    { cmd: "/theme", title: "Switch theme", desc: "Open theme selector popup (OpenCode, System, TokyoNight, Catppuccin)" },
+    { cmd: "/new", title: "New session", desc: "Clear messages and reset isolated T450 workspace session" },
+    { cmd: "/cd", title: "Change workspace directory", desc: "Usage: /cd <path> (switches active Mac folder)" },
+    { cmd: "/undo", title: "Undo last file edit", desc: "Revert the last file modification made by the agent" },
+    { cmd: "/status", title: "Session status", desc: "Open centered connection & workspace status popup" },
+    { cmd: "/clear", title: "Return to centered Home", desc: "Clear visual message view back to centered Home screen" },
+    { cmd: "/help", title: "Help & keybindings", desc: "Show OpenCode commands, !shell, @file, and shortcuts" },
+    { cmd: "/exit", title: "Exit WaHarness", desc: "Quit WaHarness TUI" }
+];
+
+function stripAnsi(s) {
+    return String(s || "").replace(/\x1b\[[0-9;]*m/g, "");
+}
+
+function visibleLen(s) {
+    return stripAnsi(s).length;
+}
+
+function padRightVisible(s, width) {
+    const v = visibleLen(s);
+    if (v >= width) return s;
+    return s + " ".repeat(width - v);
+}
+
+function clipPlain(s, maxLen) {
+    const str = String(s || "");
+    if (str.length <= maxLen) return str;
+    return str.slice(0, Math.max(0, maxLen - 1)) + "…";
+}
 
 function shortPath(p) {
     const home = os.homedir();
@@ -118,160 +165,513 @@ function shortPath(p) {
     return p;
 }
 
-// Helper to pad plain text BEFORE wrapping in ANSI color codes so borders always align 100%
-function padCol(str, len, color = "") {
-    const raw = String(str || "");
-    const clipped = raw.length > len ? raw.slice(0, len - 1) + "…" : raw.padEnd(len, " ");
-    return color ? `${color}${clipped}${RESET}` : clipped;
+function wrapText(text, maxWidth) {
+    const w = Math.max(20, maxWidth);
+    const out = [];
+    for (const rawLine of String(text || "").replace(/\r\n/g, "\n").split("\n")) {
+        if (rawLine.length <= w) {
+            out.push(rawLine);
+            continue;
+        }
+        let rem = rawLine;
+        while (rem.length > w) {
+            let idx = rem.lastIndexOf(" ", w);
+            if (idx <= w * 0.3) idx = w;
+            out.push(rem.slice(0, idx));
+            rem = rem.slice(idx).trimStart();
+        }
+        if (rem) out.push(rem);
+    }
+    return out;
 }
 
-class WaHarnessCLI {
+class WaHarnessTUI {
     constructor() {
         this.cwd = process.cwd();
         this.activeModel = "gemini-4-argon-medium";
         this.mode = "build"; // "build" | "plan"
-        this.themeName = "system";
+        this.themeName = "opencode";
         this.transport = new WhatsAppTransport();
-        this.rl = null;
-        this.origTtyWrite = null;
+
+        // Full-screen TUI state
+        this.messages = []; // [{ role: "user"|"assistant"|"tool"|"system", text, meta, diff }]
+        this.scrollOffset = 0; // lines scrolled up from bottom
+        this.inputBuffer = "";
+        this.history = [];
+        this.historyIdx = -1;
+        this.placeholderIdx = 0;
+
+        // Async / streaming state
         this.inFlight = false;
-        this.inModal = false;
         this.activeReq = null;
         this.completedIds = new Set();
         this.pollTimer = null;
         this.spinnerTimer = null;
+        this.streamTimer = null;
         this.spinnerFrame = 0;
         this.spinnerStart = 0;
         this.spinnerStatus = "Thinking...";
+
+        // Centered Modal Popup state: null | { type: "model"|"command"|"theme"|"info", title, query, cursor, items, lines }
+        this.modal = null;
+        this.toast = null;
+        this.toastTimer = null;
+        this.qrString = null;
     }
 
     get T() {
-        return THEMES[this.themeName] || THEMES.system;
+        return THEMES[this.themeName] || THEMES.opencode;
     }
 
-    renderHeader() {
-        const T = this.T;
-        const connected = this.transport.connected;
-        const statusDot = connected ? `${T.success}●${RESET}` : `${T.primary}◌${RESET}`;
-        const ws = shortPath(this.cwd);
-        const modeText = this.mode === "plan" ? "◈ plan (read-only)" : "▣ build (read/write)";
-        const modeColor = this.mode === "plan" ? T.info : T.primary;
-
-        return [
-            "",
-            `  ${T.muted}█░█░█ ▄▀█${RESET} ${T.text}${BOLD}█░█ ▄▀█ █▀█ █▄░█ █▀▀ █▀ █▀${RESET}   ${T.muted}v1.1.1${RESET}`,
-            `  ${T.muted}▀▄▀▄▀ █▀█${RESET} ${T.text}${BOLD}█▀█ █▀█ █▀▄ █░▀█ ██▄ ▄█ ▄█${RESET}   ${statusDot} ${T.muted}zero-rate tunnel${RESET}`,
-            "",
-            `  ${T.border}┌────────────────────────────────────────────────────────────────────┐${RESET}`,
-            `  ${T.border}│${RESET} ${padCol("Workspace", 10, T.muted)} ${padCol(ws, 55, T.text)} ${T.border}│${RESET}`,
-            `  ${T.border}│${RESET} ${padCol("Model", 10, T.muted)} ${padCol(this.activeModel, 34, T.text + BOLD)} ${padCol(modeText, 20, modeColor)} ${T.border}│${RESET}`,
-            `  ${T.border}│${RESET} ${padCol("Commands", 10, T.muted)} ${padCol("/model  /mode  /theme  /cd  /undo  /new  !cmd  @file", 55, T.muted)} ${T.border}│${RESET}`,
-            `  ${T.border}└────────────────────────────────────────────────────────────────────┘${RESET}`,
-            ""
-        ].join("\n");
+    get cols() {
+        return process.stdout.columns || 100;
     }
 
-    formatMarkdownLines(text) {
-        const T = this.T;
-        const rawLines = (text || "").replace(/\r\n/g, "\n").split("\n");
-        const out = [];
-        let inCode = false;
-        let codeLang = "";
-
-        for (const line of rawLines) {
-            const trimmed = line.trim();
-            if (trimmed.startsWith("```")) {
-                if (!inCode) {
-                    inCode = true;
-                    codeLang = trimmed.slice(3).trim() || "code";
-                    out.push(`  ${T.accent}┃${RESET}  ${T.border}┌── ${T.info}${codeLang}${T.border} ────────────────────────────────────────${RESET}`);
-                } else {
-                    inCode = false;
-                    out.push(`  ${T.accent}┃${RESET}  ${T.border}└────────────────────────────────────────────────────${RESET}`);
-                }
-                continue;
-            }
-
-            if (inCode) {
-                out.push(`  ${T.accent}┃${RESET}  ${T.border}│${RESET} ${T.info}${line}${RESET}`);
-                continue;
-            }
-
-            let formatted = line;
-            if (/^#{1,3}\s+/.test(formatted)) {
-                formatted = `${T.primary}${BOLD}${formatted.replace(/^#{1,3}\s+/, "")}${RESET}`;
-            } else {
-                formatted = formatted.replace(/\*\*([^*]+)\*\*/g, `${T.text}${BOLD}$1${RESET}`);
-                formatted = formatted.replace(/`([^`]+)`/g, `${T.info}$1${RESET}`);
-                if (/^\s*[-*]\s+/.test(formatted)) {
-                    formatted = formatted.replace(/^(\s*)[-*]\s+/, `$1${T.primary}•${RESET} `);
-                }
-            }
-            out.push(`  ${T.accent}┃${RESET}  ${formatted}`);
-        }
-        return out.join("\n");
+    get rows() {
+        return process.stdout.rows || 30;
     }
 
-    // Intercept readline's internal _ttyWrite so stdin stays in raw mode and arrow keys work 100% reliably
-    lockReadlineKeys(customHandler) {
-        if (!this.rl) return;
-        if (!this.origTtyWrite) {
-            this.origTtyWrite = this.rl._ttyWrite.bind(this.rl);
-        }
-        if (process.stdin.isTTY) {
-            try {
-                process.stdin.setRawMode(true);
-                process.stdin.resume();
-            } catch (_) {}
-        }
-        this.rl._ttyWrite = (s, key) => {
-            if (customHandler) customHandler(s, key || {});
-        };
+    showToast(msg, durationMs = 2600) {
+        if (this.toastTimer) clearTimeout(this.toastTimer);
+        this.toast = msg;
+        this.render();
+        this.toastTimer = setTimeout(() => {
+            this.toast = null;
+            this.render();
+        }, durationMs);
     }
 
-    unlockReadlineKeys() {
-        if (!this.rl) return;
-        if (this.origTtyWrite) {
-            this.rl._ttyWrite = this.origTtyWrite;
-        }
-    }
+    async start() {
+        // Enter alternate screen buffer and hide hardware cursor (we draw a styled block cursor)
+        process.stdout.write("\x1b[?1049h\x1b[?25l\x1b[2J\x1b[H");
+        process.on("exit", () => {
+            process.stdout.write("\x1b[?25h\x1b[?1049l");
+        });
 
-    startSpinner(statusText = "Thinking...") {
-        this.stopSpinner();
-        const T = this.T;
-        this.spinnerStatus = statusText;
-        this.spinnerStart = Date.now();
-        this.spinnerFrame = 0;
+        this.setupRawInput();
+        process.stdout.on("resize", () => this.render());
 
-        // While spinner runs, block readline echo and allow Esc / Ctrl+C to cancel
-        this.lockReadlineKeys((s, key) => {
-            if (key.name === "escape" || (key.ctrl && key.name === "c")) {
-                this.cancelInFlight();
+        this.transport.on("qr", (qr) => {
+            this.qrString = qr;
+            this.render();
+        });
+
+        this.transport.on("ready", async ({ isFirst }) => {
+            this.qrString = null;
+            if (isFirst) {
+                this.render();
+            } else if (this.inFlight && this.activeReq) {
+                setTimeout(async () => {
+                    if (this.inFlight && this.activeReq && this.transport.connected) {
+                        try {
+                            await this.transport.sendMessage("!WAH_POLL:" + JSON.stringify(this.activeReq));
+                        } catch (_) {}
+                    }
+                }, 800);
             }
         });
 
-        const render = () => {
-            const frame = SPINNER_FRAMES[this.spinnerFrame % SPINNER_FRAMES.length];
-            this.spinnerFrame++;
-            const elapsed = ((Date.now() - this.spinnerStart) / 1000).toFixed(1);
-            const cols = process.stdout.columns || 80;
-            const suffix = ` (${elapsed}s · esc to cancel)`;
-            const maxStatusLen = Math.max(16, cols - suffix.length - 10);
-            const cleanStatus = String(this.spinnerStatus || "").replace(/\s+/g, " ").trim();
-            const clippedStatus = cleanStatus.length > maxStatusLen
-                ? cleanStatus.slice(0, maxStatusLen - 1) + "…"
-                : cleanStatus;
-            process.stdout.write(
-                `\r\x1b[2K  ${T.accent}┃${RESET}  ${T.primary}${frame}${RESET} ${T.text}${clippedStatus}${RESET}${T.muted}${suffix}${RESET}`
-            );
+        this.transport.on("disconnected", ({ shouldReconnect }) => {
+            if (!shouldReconnect) {
+                this.showToast("WhatsApp logged out. Delete ~/.waharness/auth_info to re-pair.", 6000);
+            }
+            this.render();
+        });
+
+        this.transport.on("message", (msg) => this.handleInbound(msg));
+
+        this.render();
+        await this.transport.init();
+    }
+
+    cleanupAndExit() {
+        if (this.spinnerTimer) clearInterval(this.spinnerTimer);
+        if (this.pollTimer) clearInterval(this.pollTimer);
+        if (this.streamTimer) clearInterval(this.streamTimer);
+        process.stdout.write("\x1b[?25h\x1b[?1049l");
+        process.exit(0);
+    }
+
+    setupRawInput() {
+        readline.emitKeypressEvents(process.stdin);
+        if (process.stdin.isTTY) {
+            process.stdin.setRawMode(true);
+        }
+        process.stdin.resume();
+
+        process.stdin.on("keypress", async (str, key = {}) => {
+            // Global Ctrl+C
+            if (key.ctrl && key.name === "c") {
+                if (this.modal) {
+                    this.modal = null;
+                    this.render();
+                    return;
+                }
+                if (this.inFlight) {
+                    this.cancelInFlight();
+                    return;
+                }
+                this.cleanupAndExit();
+                return;
+            }
+
+            // Global Ctrl+P -> Open Centered Command Palette Popup
+            if (key.ctrl && key.name === "p") {
+                this.openCommandPaletteModal();
+                return;
+            }
+
+            // 1. If a Centered Modal Popup is open, route keys exclusively to the popup
+            if (this.modal) {
+                await this.handleModalKey(str, key);
+                return;
+            }
+
+            // 2. If a turn is in-flight, Esc cancels
+            if (this.inFlight) {
+                if (key.name === "escape") {
+                    this.cancelInFlight();
+                }
+                return;
+            }
+
+            // 3. Normal Composer Input Handling
+            if (key.name === "tab") {
+                this.mode = this.mode === "build" ? "plan" : "build";
+                this.showToast(`Switched agent mode to ${this.mode.toUpperCase()}`);
+                return;
+            }
+
+            if (key.name === "escape") {
+                if (this.inputBuffer.length > 0) {
+                    this.inputBuffer = "";
+                    this.render();
+                }
+                return;
+            }
+
+            if (key.name === "pageup") {
+                this.scrollOffset += 6;
+                this.render();
+                return;
+            }
+            if (key.name === "pagedown") {
+                this.scrollOffset = Math.max(0, this.scrollOffset - 6);
+                this.render();
+                return;
+            }
+
+            if (key.name === "up") {
+                if (this.history.length > 0) {
+                    if (this.historyIdx < this.history.length - 1) {
+                        this.historyIdx++;
+                        this.inputBuffer = this.history[this.history.length - 1 - this.historyIdx];
+                        this.render();
+                    }
+                }
+                return;
+            }
+
+            if (key.name === "down") {
+                if (this.historyIdx > 0) {
+                    this.historyIdx--;
+                    this.inputBuffer = this.history[this.history.length - 1 - this.historyIdx];
+                    this.render();
+                } else if (this.historyIdx === 0) {
+                    this.historyIdx = -1;
+                    this.inputBuffer = "";
+                    this.render();
+                }
+                return;
+            }
+
+            if (key.name === "backspace") {
+                if (this.inputBuffer.length > 0) {
+                    this.inputBuffer = this.inputBuffer.slice(0, -1);
+                    this.render();
+                }
+                return;
+            }
+
+            if (key.name === "return" || key.name === "enter") {
+                const submitted = this.inputBuffer.trim();
+                this.inputBuffer = "";
+                this.historyIdx = -1;
+                if (!submitted) {
+                    this.render();
+                    return;
+                }
+                this.history.push(submitted);
+                this.scrollOffset = 0;
+
+                // Open the Command Palette if user just typed "/"
+                if (submitted === "/") {
+                    this.openCommandPaletteModal();
+                    return;
+                }
+
+                if (submitted.startsWith("!") && submitted.length > 1) {
+                    await this.runLocalShell(submitted.slice(1).trim());
+                    return;
+                }
+
+                if (submitted.startsWith("/")) {
+                    await this.handleSlashCommand(submitted);
+                    return;
+                }
+
+                await this.dispatchPrompt(submitted);
+                return;
+            }
+
+            if (str && !key.ctrl && !key.meta) {
+                const clean = str.replace(/[\r\n\t]/g, " ");
+                if (clean) {
+                    this.inputBuffer += clean;
+                    // If user typed "/" as the first character, open the live Command Palette popup
+                    if (this.inputBuffer === "/") {
+                        this.inputBuffer = "";
+                        this.openCommandPaletteModal();
+                        return;
+                    }
+                    this.render();
+                }
+            }
+        });
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // CENTERED POPUP MODALS (OpenCode DialogSelect Architecture)
+    // ──────────────────────────────────────────────────────────────────────────
+
+    openModelModal() {
+        const idx = Math.max(0, MODEL_CATALOG.findIndex((m) => m.id === this.activeModel));
+        this.modal = {
+            type: "model",
+            title: "Select Model",
+            subtitle: `${MODEL_CATALOG.length} live models on T450`,
+            query: "",
+            cursor: idx
         };
-        render();
-        this.spinnerTimer = setInterval(render, 80);
+        this.render();
+    }
+
+    openCommandPaletteModal() {
+        this.modal = {
+            type: "command",
+            title: "Commands",
+            subtitle: "OpenCode Command Palette",
+            query: "",
+            cursor: 0
+        };
+        this.render();
+    }
+
+    openThemeModal() {
+        const keys = Object.keys(THEMES);
+        const idx = Math.max(0, keys.indexOf(this.themeName));
+        this.modal = {
+            type: "theme",
+            title: "Select Theme",
+            subtitle: "Live preview as you navigate",
+            query: "",
+            cursor: idx,
+            prevTheme: this.themeName
+        };
+        this.render();
+    }
+
+    openInfoModal(title, lines) {
+        this.modal = {
+            type: "info",
+            title,
+            lines
+        };
+        this.render();
+    }
+
+    getModalItems() {
+        if (!this.modal) return [];
+        const q = (this.modal.query || "").toLowerCase().trim();
+        if (this.modal.type === "model") {
+            const list = MODEL_CATALOG.map((m, i) => ({
+                id: m.id,
+                title: m.id,
+                desc: m.label,
+                badge: m.provider,
+                active: m.id === this.activeModel,
+                num: i + 1
+            }));
+            if (!q) return list;
+            return list.filter(
+                (it) =>
+                    it.title.toLowerCase().includes(q) ||
+                    it.desc.toLowerCase().includes(q) ||
+                    it.badge.toLowerCase().includes(q)
+            );
+        }
+        if (this.modal.type === "command") {
+            const list = SLASH_COMMANDS.map((c) => ({
+                id: c.cmd,
+                title: c.cmd,
+                desc: c.title,
+                badge: "",
+                active: false
+            }));
+            if (!q) return list;
+            return list.filter(
+                (it) =>
+                    it.title.toLowerCase().includes(q) ||
+                    it.desc.toLowerCase().includes(q)
+            );
+        }
+        if (this.modal.type === "theme") {
+            const list = Object.entries(THEMES).map(([k, v]) => ({
+                id: k,
+                title: k,
+                desc: v.name,
+                badge: "",
+                active: k === this.themeName
+            }));
+            if (!q) return list;
+            return list.filter(
+                (it) => it.title.toLowerCase().includes(q) || it.desc.toLowerCase().includes(q)
+            );
+        }
+        return [];
+    }
+
+    async handleModalKey(str, key) {
+        if (!this.modal) return;
+
+        if (this.modal.type === "info") {
+            if (key.name === "escape" || key.name === "return" || key.name === "enter" || key.name === "space") {
+                this.modal = null;
+                this.render();
+            }
+            return;
+        }
+
+        const items = this.getModalItems();
+
+        if (key.name === "escape") {
+            if (this.modal.type === "theme" && this.modal.prevTheme) {
+                this.themeName = this.modal.prevTheme;
+            }
+            this.modal = null;
+            this.render();
+            return;
+        }
+
+        if (key.name === "up" || (key.ctrl && key.name === "p")) {
+            if (items.length > 0) {
+                this.modal.cursor = (this.modal.cursor - 1 + items.length) % items.length;
+                if (this.modal.type === "theme" && items[this.modal.cursor]) {
+                    this.themeName = items[this.modal.cursor].id;
+                }
+                this.render();
+            }
+            return;
+        }
+
+        if (key.name === "down" || (key.ctrl && key.name === "n")) {
+            if (items.length > 0) {
+                this.modal.cursor = (this.modal.cursor + 1) % items.length;
+                if (this.modal.type === "theme" && items[this.modal.cursor]) {
+                    this.themeName = items[this.modal.cursor].id;
+                }
+                this.render();
+            }
+            return;
+        }
+
+        if (key.name === "pageup" || key.name === "left") {
+            if (items.length > 0) {
+                this.modal.cursor = Math.max(0, this.modal.cursor - 8);
+                this.render();
+            }
+            return;
+        }
+
+        if (key.name === "pagedown" || key.name === "right") {
+            if (items.length > 0) {
+                this.modal.cursor = Math.min(items.length - 1, this.modal.cursor + 8);
+                this.render();
+            }
+            return;
+        }
+
+        if (key.name === "return" || key.name === "enter") {
+            const picked = items[this.modal.cursor];
+            const type = this.modal.type;
+            this.modal = null;
+            if (picked) {
+                if (type === "model") {
+                    this.activeModel = picked.id;
+                    this.showToast(`Model switched to ${picked.id}`);
+                } else if (type === "theme") {
+                    this.themeName = picked.id;
+                    this.showToast(`Theme set to ${THEMES[picked.id].name}`);
+                } else if (type === "command") {
+                    if (picked.id === "/cd") {
+                        this.inputBuffer = "/cd ";
+                        this.render();
+                        return;
+                    }
+                    await this.handleSlashCommand(picked.id);
+                    return;
+                }
+            }
+            this.render();
+            return;
+        }
+
+        if (key.name === "backspace") {
+            if (this.modal.query.length > 0) {
+                this.modal.query = this.modal.query.slice(0, -1);
+                this.modal.cursor = 0;
+                this.render();
+            }
+            return;
+        }
+
+        if (str && !key.ctrl && !key.meta && /^[\x20-\x7E]$/.test(str)) {
+            this.modal.query += str;
+            this.modal.cursor = 0;
+            this.render();
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // PSEUDO-STREAMING & SPINNER ENGINE
+    // ──────────────────────────────────────────────────────────────────────────
+
+    startSpinner(statusText = "Thinking...") {
+        this.stopSpinner();
+        this.spinnerStatus = statusText;
+        this.spinnerStart = Date.now();
+        this.spinnerFrame = 0;
+        this.spinnerTimer = setInterval(() => {
+            this.spinnerFrame++;
+            this.render();
+        }, 90);
+        this.render();
+    }
+
+    updateSpinner(statusText) {
+        this.spinnerStatus = statusText;
+        this.render();
+    }
+
+    stopSpinner() {
+        if (this.spinnerTimer) {
+            clearInterval(this.spinnerTimer);
+            this.spinnerTimer = null;
+        }
     }
 
     cancelInFlight() {
         if (!this.inFlight) return;
-        const T = this.T;
         this.clearPollTimer();
         this.stopSpinner();
         if (this.activeReq && this.activeReq.id) {
@@ -279,23 +679,11 @@ class WaHarnessCLI {
         }
         this.activeReq = null;
         this.inFlight = false;
-        console.log(`  ${T.accent}╹${RESET}${T.error}✗${RESET}  ${T.muted}Cancelled${RESET}\n`);
-        this.promptUser();
-    }
-
-    updateSpinner(statusText) {
-        this.spinnerStatus = statusText;
-    }
-
-    stopSpinner() {
-        if (this.spinnerTimer) {
-            clearInterval(this.spinnerTimer);
-            this.spinnerTimer = null;
-            process.stdout.write("\r\x1b[2K");
-        }
-        if (!this.inModal) {
-            this.unlockReadlineKeys();
-        }
+        this.messages.push({
+            role: "system",
+            text: "✗ Turn cancelled by user."
+        });
+        this.render();
     }
 
     clearPollTimer() {
@@ -315,108 +703,212 @@ class WaHarnessCLI {
         }, 9000);
     }
 
-    async start() {
-        console.clear();
-        console.log(this.renderHeader());
-        this.startSpinner("Connecting to zero-rate WhatsApp tunnel...");
+    pseudoStreamAssistantMessage(fullText, model, dur) {
+        if (this.streamTimer) clearInterval(this.streamTimer);
+        const text = String(fullText || "").trim();
+        const msgObj = {
+            role: "assistant",
+            text: "",
+            model: model || this.activeModel,
+            dur: dur || 0,
+            streaming: true
+        };
+        this.messages.push(msgObj);
 
-        this.transport.on("qr", (qr) => {
-            this.stopSpinner();
-            console.log(`\n  ${this.T.primary}Scan QR code in WhatsApp -> Linked Devices:${RESET}\n`);
-            if (qrcode) qrcode.generate(qr, { small: true });
-        });
-
-        this.transport.on("ready", async ({ isFirst }) => {
-            if (isFirst) {
-                this.stopSpinner();
-                console.clear();
-                console.log(this.renderHeader());
-                this.setupReadline();
-                this.promptUser();
-            } else if (this.inFlight && this.activeReq) {
-                setTimeout(async () => {
-                    if (this.inFlight && this.activeReq && this.transport.connected) {
-                        try {
-                            await this.transport.sendMessage("!WAH_POLL:" + JSON.stringify(this.activeReq));
-                        } catch (_) {}
-                    }
-                }, 800);
-            }
-        });
-
-        this.transport.on("disconnected", ({ shouldReconnect }) => {
-            if (!shouldReconnect) {
-                this.stopSpinner();
-                this.clearPollTimer();
-                console.log(`\n  ${this.T.error}✗ Session logged out. Delete ~/.waharness/auth_info to re-pair.${RESET}\n`);
-            }
-        });
-
-        this.transport.on("message", (msg) => this.handleInbound(msg));
-
-        await this.transport.init();
-    }
-
-    getPromptString() {
-        const T = this.T;
-        const ws = path.basename(this.cwd) || "~";
-        const badge = this.mode === "plan" ? `${T.info}◈ plan${RESET}` : `${T.primary}▣ build${RESET}`;
-        return `  ${badge} ${T.muted}·${RESET} ${T.text}${this.activeModel}${RESET} ${T.muted}· ${ws}${RESET} ${T.primary}${BOLD}❯${RESET} `;
-    }
-
-    setupReadline() {
-        if (this.rl) return;
-        readline.emitKeypressEvents(process.stdin);
-
-        this.rl = readline.createInterface({
-            input: process.stdin,
-            output: process.stdout,
-            prompt: this.getPromptString()
-        });
-        this.origTtyWrite = this.rl._ttyWrite.bind(this.rl);
-
-        this.rl.on("line", async (line) => {
-            if (this.inFlight || this.inModal) return;
-            const input = line.trim();
-            if (!input) {
-                this.promptUser();
-                return;
-            }
-
-            if (input.startsWith("!") && input.length > 1) {
-                const shellCmd = input.slice(1).trim();
-                await this.runLocalShell(shellCmd);
-                this.promptUser();
-                return;
-            }
-
-            if (input.startsWith("/")) {
-                await this.handleSlashCommand(input);
-                if (!this.inModal && !this.inFlight) {
-                    this.promptUser();
-                }
-                return;
-            }
-
-            await this.dispatchPrompt(input);
-        });
-
-        this.rl.on("close", () => {
-            this.clearPollTimer();
-            this.stopSpinner();
-            console.log(`\n  ${this.T.muted}Session closed.${RESET}\n`);
-            process.exit(0);
-        });
-    }
-
-    promptUser() {
-        if (this.rl && !this.inFlight && !this.inModal) {
-            this.unlockReadlineKeys();
-            this.rl.line = "";
-            this.rl.cursor = 0;
-            this.rl.setPrompt(this.getPromptString());
-            this.rl.prompt();
+        if (text.length <= 40) {
+            msgObj.text = text;
+            msgObj.streaming = false;
+            this.inFlight = false;
+            this.render();
+            return;
         }
+
+        // Reveal in ~28 smooth progressive frames (~0.75s total)
+        const totalFrames = 28;
+        const step = Math.max(12, Math.ceil(text.length / totalFrames));
+        let pos = 0;
+
+        this.streamTimer = setInterval(() => {
+            pos = Math.min(text.length, pos + step);
+            msgObj.text = text.slice(0, pos);
+            this.scrollOffset = 0;
+            if (pos >= text.length) {
+                clearInterval(this.streamTimer);
+                this.streamTimer = null;
+                msgObj.streaming = false;
+                this.inFlight = false;
+            }
+            this.render();
+        }, 25);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // SLASH COMMANDS & AGENT DISPATCH
+    // ──────────────────────────────────────────────────────────────────────────
+
+    findModelByQuery(query) {
+        const q = String(query || "").trim().toLowerCase();
+        if (!q) return null;
+        if (q === "agy" || q === "default") return MODEL_CATALOG[0];
+        if (q === "hermes" || q === "deepseek") return MODEL_CATALOG.find((m) => m.id === "deepseek-v4-pro");
+        if (/^\d+$/.test(q)) {
+            const idx = parseInt(q, 10) - 1;
+            if (idx >= 0 && idx < MODEL_CATALOG.length) return MODEL_CATALOG[idx];
+        }
+        const exact = MODEL_CATALOG.find((m) => m.id.toLowerCase() === q);
+        if (exact) return exact;
+        return MODEL_CATALOG.find(
+            (m) => m.id.toLowerCase().includes(q) || m.label.toLowerCase().includes(q)
+        );
+    }
+
+    async handleSlashCommand(cmd) {
+        const parts = cmd.trim().split(/\s+/);
+        const action = parts[0].toLowerCase().replace(/\.+$/, "");
+        const arg = parts.slice(1).join(" ").trim();
+
+        switch (action) {
+            case "/model":
+            case "/models":
+                if (arg) {
+                    const matched = this.findModelByQuery(arg);
+                    if (matched) {
+                        this.activeModel = matched.id;
+                        this.showToast(`Switched model to ${matched.id}`);
+                    } else {
+                        this.activeModel = arg;
+                        this.showToast(`Switched model to ${arg}`);
+                    }
+                } else {
+                    this.openModelModal();
+                }
+                break;
+
+            case "/theme":
+            case "/themes":
+                if (arg && THEMES[arg.toLowerCase()]) {
+                    this.themeName = arg.toLowerCase();
+                    this.showToast(`Theme switched to ${this.T.name}`);
+                } else {
+                    this.openThemeModal();
+                }
+                break;
+
+            case "/mode":
+            case "/plan":
+            case "/build":
+                if (action === "/plan" || arg.toLowerCase() === "plan") {
+                    this.mode = "plan";
+                } else if (action === "/build" || arg.toLowerCase() === "build") {
+                    this.mode = "build";
+                } else {
+                    this.mode = this.mode === "build" ? "plan" : "build";
+                }
+                this.showToast(`Switched mode to ${this.mode.toUpperCase()}`);
+                break;
+
+            case "/cd":
+                if (!arg) {
+                    this.showToast(`Current workspace: ${shortPath(this.cwd)} (Usage: /cd <path>)`);
+                    return;
+                }
+                const expanded = arg.startsWith("~") ? path.join(os.homedir(), arg.slice(1)) : arg;
+                const targetDir = path.isAbsolute(expanded) ? expanded : path.resolve(this.cwd, expanded);
+                if (!fs.existsSync(targetDir) || !fs.statSync(targetDir).isDirectory()) {
+                    this.showToast(`Directory not found: ${targetDir}`);
+                    return;
+                }
+                this.cwd = targetDir;
+                process.chdir(targetDir);
+                this.showToast(`Workspace changed to ${shortPath(this.cwd)}`);
+                break;
+
+            case "/undo":
+                const undoRes = undoLastEdit();
+                this.showToast(undoRes.ok ? undoRes.message : undoRes.error);
+                break;
+
+            case "/status":
+                this.openInfoModal("Session Status", [
+                    `Tunnel     : ${this.transport.connected ? "● Connected (Zero-Rate WhatsApp)" : "◌ Reconnecting..."}`,
+                    `Target JID : ${this.transport.targetChat || "self-chat"} (!WAH_ isolated)`,
+                    `Model      : ${this.activeModel}`,
+                    `Mode       : ${this.mode.toUpperCase()} (${this.mode === "plan" ? "Read-only analysis" : "Full read/write/shell"})`,
+                    `Theme      : ${this.T.name}`,
+                    `Workspace  : ${this.cwd}`,
+                    `Auth Path  : ${this.transport.authDir}`,
+                    `Messages   : ${this.messages.length} in current view`
+                ]);
+                break;
+
+            case "/help":
+                this.openInfoModal("OpenCode Shortcuts & Commands", [
+                    "/ or Ctrl+P    : Open centered Command Palette popup",
+                    "/models        : Open centered 29-model selector popup",
+                    "/theme         : Open centered live theme switcher popup",
+                    "Tab            : Toggle Build (read/write) <-> Plan (read-only) mode",
+                    "!<command>     : Execute local Mac shell command (e.g. !git status)",
+                    "@<filepath>    : Attach local Mac file into prompt (e.g. fix @app.js)",
+                    "/cd <dir>      : Switch active Mac directory & isolated session",
+                    "/undo          : Revert last file edit made by the agent",
+                    "/new           : Reset isolated T450 session for this workspace",
+                    "PgUp / PgDn    : Scroll conversation history",
+                    "Esc            : Dismiss popup or cancel in-flight turn"
+                ]);
+                break;
+
+            case "/clear":
+                this.messages = [];
+                this.scrollOffset = 0;
+                this.render();
+                break;
+
+            case "/new":
+                this.messages = [];
+                this.scrollOffset = 0;
+                if (!this.transport.connected) {
+                    this.showToast("Cleared local view (tunnel offline).");
+                    return;
+                }
+                const reqId = Math.random().toString(36).substring(2, 10);
+                this.inFlight = true;
+                this.activeReq = { id: reqId, cmd: "new", cwd: this.cwd };
+                this.startSpinner("Resetting isolated T450 workspace session...");
+                await this.transport.sendMessage("!WAH_CMD:" + JSON.stringify(this.activeReq));
+                break;
+
+            case "/exec":
+                if (arg) await this.runLocalShell(arg);
+                break;
+
+            case "/exit":
+            case "/quit":
+                this.cleanupAndExit();
+                break;
+
+            default:
+                this.openCommandPaletteModal();
+                break;
+        }
+    }
+
+    async runLocalShell(localCmd) {
+        this.messages.push({ role: "user", text: `!${localCmd}`, mode: "shell" });
+        this.inFlight = true;
+        this.startSpinner(`Running local shell: ${localCmd}`);
+        const res = await executeCommand(localCmd, this.cwd);
+        this.stopSpinner();
+        this.inFlight = false;
+        const out = [res.out ? res.out.trimEnd() : "", res.err ? res.err.trimEnd() : ""].filter(Boolean).join("\n");
+        this.messages.push({
+            role: "tool",
+            action: "shell",
+            detail: localCmd,
+            dur: res.dur,
+            ok: res.code === 0,
+            output: out ? out.split("\n").slice(0, 18) : []
+        });
+        this.render();
     }
 
     getTopLevelFiles() {
@@ -446,213 +938,6 @@ class WaHarnessCLI {
         return attachments;
     }
 
-    async runLocalShell(localCmd) {
-        const T = this.T;
-        console.log(`\n  ${T.border}┃${RESET} ${T.primary}$ ${localCmd}${RESET}`);
-        const res = await executeCommand(localCmd, this.cwd);
-        if (res.out) {
-            for (const l of res.out.trimEnd().split("\n")) {
-                console.log(`  ${T.border}┃${RESET} ${l}`);
-            }
-        }
-        if (res.err) {
-            for (const l of res.err.trimEnd().split("\n")) {
-                console.log(`  ${T.border}┃${RESET} ${T.error}${l}${RESET}`);
-            }
-        }
-        console.log(`  ${T.border}╹${RESET} ${T.muted}exit ${res.code} · ${res.dur}s${RESET}\n`);
-    }
-
-    findModelByQuery(query) {
-        const q = String(query || "").trim().toLowerCase();
-        if (!q) return null;
-        if (q === "agy" || q === "default") return MODEL_CATALOG[0];
-        if (q === "hermes" || q === "deepseek") return MODEL_CATALOG.find((m) => m.id === "deepseek-v4-pro");
-        if (/^\d+$/.test(q)) {
-            const idx = parseInt(q, 10) - 1;
-            if (idx >= 0 && idx < MODEL_CATALOG.length) return MODEL_CATALOG[idx];
-        }
-        const exact = MODEL_CATALOG.find((m) => m.id.toLowerCase() === q);
-        if (exact) return exact;
-        return MODEL_CATALOG.find(
-            (m) => m.id.toLowerCase().includes(q) || m.label.toLowerCase().includes(q)
-        );
-    }
-
-    openInteractiveModelPicker() {
-        if (!process.stdin.isTTY || !this.rl) {
-            this.printStaticModelCatalog();
-            return Promise.resolve();
-        }
-
-        return new Promise((resolve) => {
-            const T = this.T;
-            this.inModal = true;
-            let searchQuery = "";
-            let cursor = Math.max(0, MODEL_CATALOG.findIndex((m) => m.id === this.activeModel));
-            const pageSize = 10;
-            let drawnLines = 0;
-
-            const getFiltered = () => {
-                if (!searchQuery) return MODEL_CATALOG;
-                const q = searchQuery.toLowerCase();
-                return MODEL_CATALOG.filter(
-                    (m) =>
-                        m.id.toLowerCase().includes(q) ||
-                        m.label.toLowerCase().includes(q) ||
-                        m.group.toLowerCase().includes(q)
-                );
-            };
-
-            const clearModal = () => {
-                if (drawnLines > 0) {
-                    process.stdout.write(`\x1b[${drawnLines}A\r\x1b[J`);
-                    drawnLines = 0;
-                }
-            };
-
-            const renderModal = () => {
-                clearModal();
-                const items = getFiltered();
-                if (cursor >= items.length) cursor = Math.max(0, items.length - 1);
-
-                const start = Math.max(0, Math.min(cursor - Math.floor(pageSize / 2), Math.max(0, items.length - pageSize)));
-                const end = Math.min(items.length, start + pageSize);
-
-                const searchDisplay = searchQuery
-                    ? `${T.text}${BOLD}${searchQuery}█${RESET}`
-                    : `${T.muted}type to filter or use ↑/↓ arrows...${RESET}`;
-
-                const rows = [
-                    "",
-                    `  ${T.border}┌────────────────────────────────────────────────────────────────────┐${RESET}`,
-                    `  ${T.border}│${RESET} ${T.primary}${BOLD}Select Model${RESET} ${T.muted}(↑/↓ navigate · Enter confirm · Esc cancel)${RESET}           ${T.border}│${RESET}`,
-                    `  ${T.border}│${RESET} ${T.info}Search:${RESET} ${searchDisplay}`,
-                    `  ${T.border}├────────────────────────────────────────────────────────────────────┤${RESET}`
-                ];
-
-                if (items.length === 0) {
-                    rows.push(`  ${T.border}│${RESET}   ${T.error}No models matching "${searchQuery}"${RESET}`);
-                } else {
-                    for (let i = start; i < end; i++) {
-                        const item = items[i];
-                        const globalIdx = MODEL_CATALOG.indexOf(item) + 1;
-                        const numStr = String(globalIdx).padStart(2, " ") + ".";
-                        const isCurrent = item.id === this.activeModel;
-                        const isSelected = i === cursor;
-
-                        const pointer = isSelected ? `${T.primary}${BOLD}❯${RESET}` : " ";
-                        const activeDot = isCurrent ? `${T.success}●${RESET}` : " ";
-                        const idFormatted = isSelected
-                            ? `${T.selectedBg} ${ item.id.padEnd(29) } ${RESET}`
-                            : padCol(" " + item.id, 31, isCurrent ? T.primary + BOLD : T.text);
-                        const labelFormatted = padCol(item.label, 27, isSelected ? T.info + BOLD : T.muted);
-
-                        rows.push(
-                            `  ${T.border}│${RESET} ${pointer} ${T.muted}${numStr}${RESET} ${activeDot} ${idFormatted} ${labelFormatted} ${T.border}│${RESET}`
-                        );
-                    }
-                }
-
-                const countInfo = items.length > 0
-                    ? `Showing ${start + 1}-${end} of ${items.length} models`
-                    : "0 matches";
-                rows.push(
-                    `  ${T.border}└────────────────────────────────────────────────────────────────────┘${RESET}`,
-                    `    ${T.muted}${countInfo}${RESET}`,
-                    ""
-                );
-
-                const output = rows.join("\n");
-                drawnLines = rows.length - 1;
-                process.stdout.write(output);
-            };
-
-            const finish = (selectedModel) => {
-                clearModal();
-                this.inModal = false;
-                this.unlockReadlineKeys();
-                if (selectedModel) {
-                    this.activeModel = selectedModel.id;
-                    console.log(
-                        `\n  ${T.success}✓${RESET} ${T.muted}Model switched to${RESET} ${T.text}${BOLD}${selectedModel.id}${RESET} ${T.muted}(${selectedModel.label})${RESET}\n`
-                    );
-                } else {
-                    console.log(`\n  ${T.muted}Model unchanged (${this.activeModel}).${RESET}\n`);
-                }
-                this.promptUser();
-                resolve();
-            };
-
-            // Intercept readline's raw _ttyWrite so Up/Down/Enter/Esc/Typing work seamlessly
-            this.lockReadlineKeys((s, key) => {
-                const items = getFiltered();
-                if (key.name === "up" || (key.ctrl && key.name === "p")) {
-                    if (items.length > 0) {
-                        cursor = (cursor - 1 + items.length) % items.length;
-                        renderModal();
-                    }
-                    return;
-                }
-                if (key.name === "down" || (key.ctrl && key.name === "n")) {
-                    if (items.length > 0) {
-                        cursor = (cursor + 1) % items.length;
-                        renderModal();
-                    }
-                    return;
-                }
-                if (key.name === "pageup" || key.name === "left") {
-                    if (items.length > 0) {
-                        cursor = Math.max(0, cursor - pageSize);
-                        renderModal();
-                    }
-                    return;
-                }
-                if (key.name === "pagedown" || key.name === "right") {
-                    if (items.length > 0) {
-                        cursor = Math.min(items.length - 1, cursor + pageSize);
-                        renderModal();
-                    }
-                    return;
-                }
-                if (key.name === "return" || key.name === "enter") {
-                    finish(items[cursor] || null);
-                    return;
-                }
-                if (key.name === "escape" || (key.ctrl && key.name === "c")) {
-                    finish(null);
-                    return;
-                }
-                if (key.name === "backspace") {
-                    if (searchQuery.length > 0) {
-                        searchQuery = searchQuery.slice(0, -1);
-                        cursor = 0;
-                        renderModal();
-                    }
-                    return;
-                }
-                if (s && !key.ctrl && !key.meta && /^[\x20-\x7E]$/.test(s)) {
-                    searchQuery += s;
-                    cursor = 0;
-                    renderModal();
-                }
-            });
-
-            renderModal();
-        });
-    }
-
-    printStaticModelCatalog() {
-        const T = this.T;
-        console.log(`\n  ${T.text}${BOLD}Available T450 Models (${MODEL_CATALOG.length})${RESET}`);
-        MODEL_CATALOG.forEach((m, i) => {
-            const mark = m.id === this.activeModel ? `${T.success}●${RESET}` : " ";
-            const num = String(i + 1).padStart(2, " ");
-            console.log(`  ${T.muted}${num}.${RESET} ${mark} ${padCol(m.id, 30, T.text)} ${T.muted}${m.label}${RESET}`);
-        });
-        console.log(`\n  ${T.muted}Use /model <number or name> to switch.${RESET}\n`);
-    }
-
     async waitForConnection(maxWaitMs = 8000) {
         const start = Date.now();
         while (!this.transport.connected && Date.now() - start < maxWaitMs) {
@@ -661,182 +946,26 @@ class WaHarnessCLI {
         return this.transport.connected;
     }
 
-    async handleSlashCommand(cmd) {
-        const T = this.T;
-        const parts = cmd.trim().split(/\s+/);
-        const action = parts[0].toLowerCase().replace(/\.+$/, "");
-        const arg = parts.slice(1).join(" ").trim();
-
-        switch (action) {
-            case "/help":
-                console.log([
-                    "",
-                    `  ${T.text}${BOLD}OpenCode Commands & Shortcuts${RESET}`,
-                    `  ${T.primary}/model${RESET} ${T.muted}[id|num|query]${RESET}   Interactive arrow-key model picker (with live search filter)`,
-                    `  ${T.primary}/mode${RESET} ${T.muted}[build|plan]${RESET}      Toggle between build (read/write) and plan (read-only) mode`,
-                    `  ${T.primary}/theme${RESET} ${T.muted}[name]${RESET}           Switch color palette (system, opencode, tokyonight, catppuccin)`,
-                    `  ${T.primary}/cd <path>${RESET}              Change active Mac workspace directory (switches session)`,
-                    `  ${T.primary}/undo${RESET}                   Revert the last file modification made by the agent`,
-                    `  ${T.primary}/new${RESET}                    Start a fresh isolated T450 session for this directory`,
-                    `  ${T.primary}/status${RESET}                 Inspect tunnel connection, JID, mode, model, and workspace`,
-                    `  ${T.primary}!<command>${RESET}              Quick shell execution on Mac (e.g. ${T.info}!git status${RESET})`,
-                    `  ${T.primary}@<filepath>${RESET}             Inline file attachment in prompt (e.g. ${T.info}fix bug in @app.js${RESET})`,
-                    `  ${T.primary}/clear${RESET}                  Clear terminal view`,
-                    `  ${T.primary}/exit${RESET}                   Exit WaHarness`,
-                    ""
-                ].join("\n"));
-                break;
-
-            case "/models":
-            case "/model":
-                if (arg) {
-                    if (arg.toLowerCase() === "list") {
-                        this.printStaticModelCatalog();
-                        return;
-                    }
-                    const matched = this.findModelByQuery(arg);
-                    if (matched) {
-                        this.activeModel = matched.id;
-                        console.log(`\n  ${T.success}✓${RESET} ${T.muted}Switched model to${RESET} ${T.text}${BOLD}${matched.id}${RESET} ${T.muted}(${matched.label})${RESET}\n`);
-                    } else {
-                        this.activeModel = arg;
-                        console.log(`\n  ${T.success}✓${RESET} ${T.muted}Switched custom model ID to${RESET} ${T.text}${BOLD}${arg}${RESET}\n`);
-                    }
-                } else {
-                    await this.openInteractiveModelPicker();
-                }
-                break;
-
-            case "/theme":
-            case "/themes":
-                if (arg && THEMES[arg.toLowerCase()]) {
-                    this.themeName = arg.toLowerCase();
-                    console.clear();
-                    console.log(this.renderHeader());
-                    console.log(`  ${this.T.success}✓${RESET} ${this.T.muted}Theme switched to${RESET} ${this.T.text}${BOLD}${this.T.name}${RESET}\n`);
-                } else {
-                    console.log(`\n  ${T.text}${BOLD}Available Themes${RESET}`);
-                    for (const [k, v] of Object.entries(THEMES)) {
-                        const mark = k === this.themeName ? `${T.success}●${RESET}` : " ";
-                        console.log(`  ${mark} ${padCol(k, 14, T.primary + BOLD)} ${T.muted}${v.name}${RESET}`);
-                    }
-                    console.log(`\n  ${T.muted}Usage: /theme <system | opencode | tokyonight | catppuccin>${RESET}\n`);
-                }
-                break;
-
-            case "/mode":
-            case "/plan":
-            case "/build":
-                if (action === "/plan" || arg.toLowerCase() === "plan") {
-                    this.mode = "plan";
-                } else if (action === "/build" || arg.toLowerCase() === "build") {
-                    this.mode = "build";
-                } else {
-                    this.mode = this.mode === "build" ? "plan" : "build";
-                }
-                console.log(
-                    `\n  ${T.success}✓${RESET} ${T.muted}Switched mode to${RESET} ${this.mode === "plan" ? T.info + "◈ plan (read-only analysis)" : T.primary + "▣ build (full tool execution)"}${RESET}\n`
-                );
-                break;
-
-            case "/cd":
-                if (!arg) {
-                    console.log(`\n  ${T.muted}Current workspace:${RESET} ${T.text}${this.cwd}${RESET}\n  ${T.muted}Usage: /cd <directory>${RESET}\n`);
-                    return;
-                }
-                const expanded = arg.startsWith("~") ? path.join(os.homedir(), arg.slice(1)) : arg;
-                const targetDir = path.isAbsolute(expanded) ? expanded : path.resolve(this.cwd, expanded);
-                if (!fs.existsSync(targetDir) || !fs.statSync(targetDir).isDirectory()) {
-                    console.log(`\n  ${T.error}✗ Directory not found:${RESET} ${targetDir}\n`);
-                    return;
-                }
-                this.cwd = targetDir;
-                process.chdir(targetDir);
-                console.log(`\n  ${T.success}✓${RESET} ${T.muted}Workspace switched to${RESET} ${T.text}${BOLD}${shortPath(this.cwd)}${RESET}\n`);
-                break;
-
-            case "/undo":
-                const undoRes = undoLastEdit();
-                if (undoRes.ok) {
-                    console.log(`\n  ${T.success}✓${RESET} ${T.text}${undoRes.message}${RESET}\n`);
-                } else {
-                    console.log(`\n  ${T.primary}⚠${RESET} ${T.muted}${undoRes.error}${RESET}\n`);
-                }
-                break;
-
-            case "/status":
-                console.log([
-                    "",
-                    `  ${T.text}${BOLD}Session Status${RESET}`,
-                    `  ${T.muted}Tunnel   ${RESET}  ${this.transport.connected ? T.success + "● connected" : T.primary + "◌ reconnecting"}${RESET}`,
-                    `  ${T.muted}Channel  ${RESET}  ${T.text}${this.transport.targetChat || "self-chat"} (!WAH_ isolated)${RESET}`,
-                    `  ${T.muted}Model    ${RESET}  ${T.primary}${this.activeModel}${RESET}`,
-                    `  ${T.muted}Mode     ${RESET}  ${this.mode === "plan" ? T.info + "◈ plan (read-only)" : T.primary + "▣ build"}${RESET}`,
-                    `  ${T.muted}Theme    ${RESET}  ${T.text}${this.T.name}${RESET}`,
-                    `  ${T.muted}Workspace${RESET}  ${T.text}${this.cwd}${RESET}`,
-                    `  ${T.muted}Auth     ${RESET}  ${T.muted}${this.transport.authDir}${RESET}`,
-                    ""
-                ].join("\n"));
-                break;
-
-            case "/new":
-                if (!(await this.waitForConnection())) {
-                    console.log(`\n  ${T.error}✗ Tunnel offline.${RESET}\n`);
-                    return;
-                }
-                const reqId = Math.random().toString(36).substring(2, 10);
-                this.inFlight = true;
-                this.activeReq = { id: reqId, cmd: "new", cwd: this.cwd };
-                console.log("");
-                this.startSpinner("Resetting workspace session...");
-                await this.transport.sendMessage("!WAH_CMD:" + JSON.stringify(this.activeReq));
-                break;
-
-            case "/clear":
-                console.clear();
-                console.log(this.renderHeader());
-                break;
-
-            case "/exec":
-                if (!arg) {
-                    console.log(`\n  ${T.muted}Usage: /exec <command> (or !<command>)${RESET}\n`);
-                    return;
-                }
-                await this.runLocalShell(arg);
-                break;
-
-            case "/exit":
-            case "/quit":
-                this.rl.close();
-                break;
-
-            default:
-                console.log(`\n  ${T.error}Unknown command:${RESET} ${action}. Type ${T.primary}/help${RESET} for commands.\n`);
-                break;
-        }
-    }
-
     async dispatchPrompt(userPrompt) {
-        const T = this.T;
-        process.stdout.write("\x1b[1A\r\x1b[2K");
-        const barColor = this.mode === "plan" ? T.info : T.primary;
-        console.log(`  ${barColor}┃${RESET}  ${T.text}${BOLD}${userPrompt}${RESET}`);
-
         const attachments = this.resolveInlineMentions(userPrompt);
-        const attachedNames = Object.keys(attachments);
-        for (const name of attachedNames) {
-            console.log(`  ${barColor}┃${RESET}  ${T.info}📎 Attached @${name}${RESET}`);
-        }
-        console.log(`  ${T.accent}┃${RESET}`);
+        this.messages.push({
+            role: "user",
+            text: userPrompt,
+            mode: this.mode,
+            attachments: Object.keys(attachments)
+        });
 
         this.inFlight = true;
         this.startSpinner(`Thinking (${this.activeModel})...`);
 
         if (!(await this.waitForConnection(8000))) {
             this.stopSpinner();
-            console.log(`  ${T.accent}┃${RESET}  ${T.error}✗ Tunnel is currently offline. Please wait a moment and try again.${RESET}\n`);
             this.inFlight = false;
-            this.promptUser();
+            this.messages.push({
+                role: "system",
+                text: "✗ Tunnel is currently offline. Wait a moment for automatic reconnect."
+            });
+            this.render();
             return;
         }
 
@@ -859,15 +988,16 @@ class WaHarnessCLI {
         } catch (e) {
             this.clearPollTimer();
             this.stopSpinner();
-            console.log(`  ${T.accent}┃${RESET}  ${T.error}✗ Send failed: ${e.message}${RESET}\n`);
             this.inFlight = false;
-            this.promptUser();
+            this.messages.push({
+                role: "system",
+                text: `✗ Send failed: ${e.message}`
+            });
+            this.render();
         }
     }
 
     async handleInbound({ text }) {
-        const T = this.T;
-        // 1. Remote Mac Tool Execution Request from T450 Brain
         if (text.startsWith("!WAH_TOOL_REQ:") || text.startsWith("!CLI_TOOL_REQ:")) {
             const pfx = text.startsWith("!WAH_") ? "!WAH_" : "!CLI_";
             const rawJson = text.split(/:(.+)/s)[1] || "{}";
@@ -901,78 +1031,369 @@ class WaHarnessCLI {
                     result.content = result.content.slice(0, 12000) + "\n...[truncated]...";
                 }
 
-                this.stopSpinner();
-                const badge = result.error ? `${T.error}✗` : `${T.success}✓`;
-                const diffStats = (result.added !== undefined || result.removed !== undefined)
-                    ? ` ${T.success}+${result.added || 0}${RESET} ${T.error}-${result.removed || 0}${RESET}`
-                    : "";
-                const durStr = result.dur ? ` (${result.dur}s)` : "";
-                const cols = process.stdout.columns || 80;
-                const maxDetail = Math.max(20, cols - req.action.length - durStr.length - 16);
-                const oneLineDetail = String(detail).replace(/\s+/g, " ").trim();
-                const clippedDetail = oneLineDetail.length > maxDetail
-                    ? oneLineDetail.slice(0, maxDetail - 1) + "…"
-                    : oneLineDetail;
-                const dur = result.dur ? ` ${T.muted}(${result.dur}s)${RESET}` : "";
-                console.log(`  ${T.accent}┃${RESET}  ${badge} ${T.info}${req.action}${RESET} ${T.text}${clippedDetail}${RESET}${diffStats}${dur}`);
-
-                if (Array.isArray(result.diffPreview)) {
-                    for (const row of result.diffPreview) {
-                        const sign = row.type === "add" ? `${T.success}+` : `${T.error}-`;
-                        const lineColor = row.type === "add" ? T.success : T.error;
-                        console.log(`  ${T.accent}┃${RESET}    ${sign} ${lineColor}${row.text.slice(0, cols - 12)}${RESET}`);
-                    }
-                }
-
-                this.startSpinner(`Thinking (${this.activeModel})...`);
+                this.messages.push({
+                    role: "tool",
+                    action: req.action === "bash" ? "shell" : req.action,
+                    detail,
+                    dur: result.dur,
+                    ok: !result.error,
+                    added: result.added,
+                    removed: result.removed,
+                    diffPreview: result.diffPreview
+                });
+                this.updateSpinner(`Thinking (${this.activeModel})...`);
 
                 const replyPkt = `${pfx}TOOL_RES:` + JSON.stringify({
                     id: req.id,
-                    result: result
+                    result
                 });
                 await this.transport.sendMessage(replyPkt);
             } catch (e) {
-                this.stopSpinner();
-                console.log(`  ${T.accent}┃${RESET}  ${T.error}✗ Tool error: ${e.message}${RESET}`);
-                this.startSpinner(`Thinking (${this.activeModel})...`);
+                this.messages.push({
+                    role: "system",
+                    text: `✗ Tool error: ${e.message}`
+                });
+                this.render();
             }
             return;
         }
 
-        // 2. Final Response from T450 Brain
         if (text.startsWith("!WAH_DONE:")) {
             try {
                 const data = JSON.parse(text.substring("!WAH_DONE:".length).trim());
-                if (data.id && this.completedIds.has(data.id)) {
-                    return;
-                }
-                if (data.id) {
-                    this.completedIds.add(data.id);
-                }
+                if (data.id && this.completedIds.has(data.id)) return;
+                if (data.id) this.completedIds.add(data.id);
+
                 this.clearPollTimer();
                 this.stopSpinner();
-                if (data.text) {
-                    console.log(this.formatMarkdownLines(data.text));
-                }
-                const modeIcon = this.mode === "plan" ? `${T.info}◈${RESET}` : `${T.primary}▣${RESET}`;
-                console.log(`  ${T.accent}╹${RESET}${modeIcon}  ${T.muted}${data.model || this.activeModel} · ${data.dur || 0}s${RESET}\n`);
+                this.activeReq = null;
+
+                this.pseudoStreamAssistantMessage(
+                    data.text || "(Done)",
+                    data.model || this.activeModel,
+                    data.dur || 0
+                );
             } catch (e) {
                 this.clearPollTimer();
                 this.stopSpinner();
-                console.log(`  ${T.accent}┃${RESET}  ${text.substring("!WAH_DONE:".length)}\n`);
+                this.activeReq = null;
+                this.inFlight = false;
+                this.messages.push({
+                    role: "assistant",
+                    text: text.substring("!WAH_DONE:".length),
+                    model: this.activeModel,
+                    dur: 0
+                });
+                this.render();
             }
-            this.activeReq = null;
-            this.inFlight = false;
-            this.promptUser();
-            return;
         }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // FULL-SCREEN CENTERED OPENCODE COMPOSITOR & RENDERER
+    // ──────────────────────────────────────────────────────────────────────────
+
+    buildPromptBoxLines(boxWidth) {
+        const T = this.T;
+        const innerW = boxWidth - 4;
+        const barColor = this.mode === "plan" ? T.info : T.primary;
+        const modeTitle = this.mode === "plan" ? "Plan" : "Build";
+        const placeholder = PLACEHOLDERS[this.placeholderIdx % PLACEHOLDERS.length];
+
+        let inputLine;
+        if (this.inputBuffer.length > 0) {
+            const tail = this.inputBuffer.length > innerW - 3
+                ? "…" + this.inputBuffer.slice(-(innerW - 4))
+                : this.inputBuffer;
+            inputLine = `${T.text}${tail}${T.primary}█${RESET}`;
+        } else {
+            inputLine = `${T.primary}█${RESET}${T.muted}${clipPlain(placeholder, innerW - 2)}${RESET}`;
+        }
+
+        const modelObj = MODEL_CATALOG.find((m) => m.id === this.activeModel);
+        const providerName = modelObj ? modelObj.provider : "T450 Isolated";
+        const metaLeft = `${barColor}${BOLD}${modeTitle}${RESET} ${T.muted}·${RESET} ${T.text}${this.activeModel}${RESET} ${T.muted}· ${providerName}${RESET}`;
+        const metaRight = `${T.muted}tab${RESET} ${T.subtle}mode${RESET}  ${T.muted}/${RESET} ${T.subtle}commands${RESET}`;
+        const gap = Math.max(1, innerW - visibleLen(metaLeft) - visibleLen(metaRight));
+        const metaLine = metaLeft + " ".repeat(gap) + metaRight;
+
+        return [
+            `${barColor}┃${RESET} ${padRightVisible("", innerW)} ${barColor}┃${RESET}`,
+            `${barColor}┃${RESET} ${padRightVisible(inputLine, innerW)} ${barColor}┃${RESET}`,
+            `${barColor}┃${RESET} ${padRightVisible("", innerW)} ${barColor}┃${RESET}`,
+            `${barColor}┃${RESET} ${padRightVisible(metaLine, innerW)} ${barColor}┃${RESET}`,
+            `${T.subtle}╹${"▀".repeat(boxWidth - 2)}╻${RESET}`
+        ];
+    }
+
+    buildConversationLines(colWidth) {
+        const T = this.T;
+        const textWidth = colWidth - 6;
+        const lines = [];
+
+        for (const m of this.messages) {
+            if (m.role === "user") {
+                const bar = m.mode === "plan" ? T.info : T.primary;
+                lines.push(`${bar}┃${RESET}`);
+                for (const wLine of wrapText(m.text, textWidth)) {
+                    lines.push(`${bar}┃${RESET}  ${T.text}${BOLD}${wLine}${RESET}`);
+                }
+                if (m.attachments && m.attachments.length > 0) {
+                    lines.push(`${bar}┃${RESET}  ${T.info}📎 ${m.attachments.map((a) => "@" + a).join("  ")}${RESET}`);
+                }
+                lines.push(`${bar}┃${RESET}`);
+                lines.push("");
+            } else if (m.role === "tool") {
+                const icon = m.ok ? `${T.success}✓${RESET}` : `${T.error}✗${RESET}`;
+                const diffInfo = (m.added !== undefined || m.removed !== undefined)
+                    ? ` ${T.success}+${m.added || 0}${RESET} ${T.error}-${m.removed || 0}${RESET}`
+                    : "";
+                const durInfo = m.dur !== undefined ? ` ${T.muted}(${m.dur}s)${RESET}` : "";
+                const clipped = clipPlain(String(m.detail || "").replace(/\s+/g, " "), Math.max(18, textWidth - 24));
+                lines.push(`   ${icon} ${T.info}${m.action}${RESET} ${T.muted}${clipped}${RESET}${diffInfo}${durInfo}`);
+
+                if (Array.isArray(m.diffPreview)) {
+                    for (const d of m.diffPreview) {
+                        const sign = d.type === "add" ? `${T.success}+` : `${T.error}-`;
+                        const c = d.type === "add" ? T.success : T.error;
+                        lines.push(`     ${sign} ${c}${clipPlain(d.text, textWidth - 8)}${RESET}`);
+                    }
+                }
+                if (Array.isArray(m.output) && m.output.length > 0) {
+                    for (const oLine of m.output) {
+                        lines.push(`     ${T.subtle}│${RESET} ${T.muted}${clipPlain(oLine, textWidth - 8)}${RESET}`);
+                    }
+                }
+            } else if (m.role === "assistant") {
+                lines.push("");
+                let inCode = false;
+                for (const rawLine of String(m.text || "").replace(/\r\n/g, "\n").split("\n")) {
+                    const trimmed = rawLine.trim();
+                    if (trimmed.startsWith("```")) {
+                        if (!inCode) {
+                            inCode = true;
+                            const lang = trimmed.slice(3).trim() || "code";
+                            lines.push(`   ${T.subtle}┌── ${T.info}${lang}${T.subtle} ${"─".repeat(Math.max(4, textWidth - lang.length - 8))}${RESET}`);
+                        } else {
+                            inCode = false;
+                            lines.push(`   ${T.subtle}└${"─".repeat(Math.max(4, textWidth - 2))}${RESET}`);
+                        }
+                        continue;
+                    }
+                    if (inCode) {
+                        lines.push(`   ${T.subtle}│${RESET} ${T.info}${clipPlain(rawLine, textWidth - 4)}${RESET}`);
+                        continue;
+                    }
+                    for (const wLine of wrapText(rawLine, textWidth)) {
+                        let fmt = wLine;
+                        if (/^#{1,3}\s+/.test(fmt)) {
+                            fmt = `${T.primary}${BOLD}${fmt.replace(/^#{1,3}\s+/, "")}${RESET}`;
+                        } else {
+                            fmt = fmt.replace(/\*\*([^*]+)\*\*/g, `${T.text}${BOLD}$1${RESET}`);
+                            fmt = fmt.replace(/`([^`]+)`/g, `${T.info}$1${RESET}`);
+                            if (/^\s*[-*]\s+/.test(fmt)) {
+                                fmt = fmt.replace(/^(\s*)[-*]\s+/, `$1${T.primary}•${RESET} `);
+                            }
+                        }
+                        lines.push(`   ${T.text}${fmt}${RESET}`);
+                    }
+                }
+                const cursorTail = m.streaming ? ` ${T.primary}▋${RESET}` : "";
+                lines.push(`   ${T.primary}▣${RESET} ${T.muted}${m.model} · ${m.dur}s${RESET}${cursorTail}`);
+                lines.push("");
+            } else if (m.role === "system") {
+                lines.push(`   ${T.muted}${m.text}${RESET}`);
+                lines.push("");
+            }
+        }
+
+        if (this.inFlight) {
+            const frame = SPINNER_FRAMES[this.spinnerFrame % SPINNER_FRAMES.length];
+            const elapsed = ((Date.now() - this.spinnerStart) / 1000).toFixed(1);
+            const st = clipPlain(this.spinnerStatus, Math.max(20, textWidth - 28));
+            lines.push(`   ${T.primary}${frame}${RESET} ${T.text}${st}${RESET} ${T.muted}(${elapsed}s · esc to cancel)${RESET}`);
+            lines.push("");
+        }
+
+        return lines;
+    }
+
+    buildModalBox() {
+        if (!this.modal) return null;
+        const T = this.T;
+        const modalW = Math.min(72, this.cols - 4);
+        const innerW = modalW - 4;
+
+        if (this.modal.type === "info") {
+            const box = [
+                `${T.primary}┏${"━".repeat(modalW - 2)}┓${RESET}`,
+                `${T.primary}┃${RESET} ${padRightVisible(`${T.text}${BOLD}${this.modal.title}${RESET}`, innerW - 4)}${T.muted}esc${RESET} ${T.primary}┃${RESET}`,
+                `${T.primary}┣${"━".repeat(modalW - 2)}┫${RESET}`
+            ];
+            for (const l of this.modal.lines || []) {
+                box.push(`${T.primary}┃${RESET} ${padRightVisible(`${T.text}${clipPlain(l, innerW)}${RESET}`, innerW)} ${T.primary}┃${RESET}`);
+            }
+            box.push(
+                `${T.primary}┃${RESET} ${padRightVisible("", innerW)} ${T.primary}┃${RESET}`,
+                `${T.primary}┗${"━".repeat(modalW - 2)}┛${RESET}`
+            );
+            return { width: modalW, lines: box };
+        }
+
+        const items = this.getModalItems();
+        if (this.modal.cursor >= items.length) {
+            this.modal.cursor = Math.max(0, items.length - 1);
+        }
+        const pageSize = Math.min(10, Math.max(5, this.rows - 12));
+        const start = Math.max(0, Math.min(this.modal.cursor - Math.floor(pageSize / 2), Math.max(0, items.length - pageSize)));
+        const end = Math.min(items.length, start + pageSize);
+
+        const searchStr = this.modal.query
+            ? `${T.text}${BOLD}${this.modal.query}${T.primary}█${RESET}`
+            : `${T.muted}Search or use ↑/↓ arrows...${RESET}`;
+
+        const box = [
+            `${T.primary}┏${"━".repeat(modalW - 2)}┓${RESET}`,
+            `${T.primary}┃${RESET} ${padRightVisible(`${T.text}${BOLD}${this.modal.title}${RESET}  ${T.muted}${this.modal.subtitle || ""}${RESET}`, innerW - 4)}${T.muted}esc${RESET} ${T.primary}┃${RESET}`,
+            `${T.primary}┃${RESET} ${padRightVisible(`${T.info}❯${RESET} ${searchStr}`, innerW)} ${T.primary}┃${RESET}`,
+            `${T.primary}┣${"━".repeat(modalW - 2)}┫${RESET}`
+        ];
+
+        if (items.length === 0) {
+            box.push(`${T.primary}┃${RESET} ${padRightVisible(`${T.error}No matches for "${this.modal.query}"${RESET}`, innerW)} ${T.primary}┃${RESET}`);
+        } else {
+            for (let i = start; i < end; i++) {
+                const it = items[i];
+                const isSel = i === this.modal.cursor;
+                const dot = it.active ? "●" : " ";
+                const leftPlain = ` ${isSel ? "▌" : " "} ${dot} ${it.title.padEnd(28)} ${clipPlain(it.desc, innerW - 36)}`;
+                const paddedPlain = leftPlain.slice(0, innerW).padEnd(innerW, " ");
+
+                if (isSel) {
+                    box.push(`${T.primary}┃${RESET} ${T.selectBg}${BOLD}${paddedPlain}${RESET} ${T.primary}┃${RESET}`);
+                } else {
+                    const dotCol = it.active ? `${T.success}●${RESET}` : " ";
+                    const titleCol = it.active ? `${T.primary}${BOLD}${it.title.padEnd(28)}${RESET}` : `${T.text}${it.title.padEnd(28)}${RESET}`;
+                    const descCol = `${T.muted}${clipPlain(it.desc, innerW - 36)}${RESET}`;
+                    const rowStr = `   ${dotCol} ${titleCol} ${descCol}`;
+                    box.push(`${T.primary}┃${RESET} ${padRightVisible(rowStr, innerW)} ${T.primary}┃${RESET}`);
+                }
+            }
+        }
+
+        const footerLeft = items.length > 0 ? `${start + 1}-${end} of ${items.length}` : "0 items";
+        const footerRight = "↑/↓ move · enter select · esc close";
+        const fGap = Math.max(1, innerW - footerLeft.length - footerRight.length);
+        box.push(
+            `${T.primary}┣${"━".repeat(modalW - 2)}┫${RESET}`,
+            `${T.primary}┃${RESET} ${T.muted}${footerLeft}${" ".repeat(fGap)}${footerRight}${RESET} ${T.primary}┃${RESET}`,
+            `${T.primary}┗${"━".repeat(modalW - 2)}┛${RESET}`
+        );
+
+        return { width: modalW, lines: box };
+    }
+
+    render() {
+        const T = this.T;
+        const W = this.cols;
+        const H = this.rows;
+        const screen = new Array(H).fill("");
+
+        const centerLine = (lineStr, widthHint = null) => {
+            const vLen = widthHint !== null ? widthHint : visibleLen(lineStr);
+            const padLeft = Math.max(0, Math.floor((W - vLen) / 2));
+            return " ".repeat(padLeft) + lineStr;
+        };
+
+        const boxWidth = Math.min(76, W - 4);
+        const promptBox = this.buildPromptBoxLines(boxWidth);
+
+        // 1. HOME ROUTE (Centered Logo + Centered Prompt Box, just like OpenCode Home.tsx)
+        if (this.messages.length === 0 && !this.inFlight) {
+            const block = [];
+            for (const [leftPart, rightPart] of LOGO_LINES) {
+                const logoRow = `${T.muted}${leftPart}${RESET}${T.text}${BOLD}${rightPart}${RESET}`;
+                block.push(centerLine(logoRow, leftPart.length + rightPart.length));
+            }
+            block.push("");
+            for (const pLine of promptBox) {
+                block.push(centerLine(pLine, boxWidth));
+            }
+            block.push("");
+            const tip = `${T.muted}Press ${T.text}/${T.muted} or ${T.text}ctrl+p${T.muted} for commands · ${T.text}/models${T.muted} for 29 models · ${T.text}tab${T.muted} switch mode${RESET}`;
+            block.push(centerLine(tip));
+
+            if (this.toast) {
+                block.push("");
+                block.push(centerLine(`${T.primary}● ${this.toast}${RESET}`));
+            }
+
+            const startRow = Math.max(1, Math.floor((H - 2 - block.length) / 2));
+            for (let i = 0; i < block.length && startRow + i < H - 1; i++) {
+                screen[startRow + i] = block[i];
+            }
+        } else {
+            // 2. SESSION ROUTE (Top bar + Centered Conversation Stream + Pinned Bottom Composer)
+            const topLeft = `  ${T.muted}█▀▀${RESET} ${T.text}${BOLD}WAHARNESS${RESET}  ${T.muted}${shortPath(this.cwd)}${RESET}`;
+            const topRight = this.toast
+                ? `${T.primary}● ${this.toast}${RESET}  `
+                : `${T.muted}${this.activeModel}${RESET}  `;
+            const topGap = Math.max(1, W - visibleLen(topLeft) - visibleLen(topRight));
+            screen[0] = topLeft + " ".repeat(topGap) + topRight;
+            screen[1] = `${T.subtle}${"─".repeat(W)}${RESET}`;
+
+            const convLines = this.buildConversationLines(boxWidth);
+            const availRows = Math.max(3, H - 2 - promptBox.length - 2);
+            const maxOffset = Math.max(0, convLines.length - availRows);
+            if (this.scrollOffset > maxOffset) this.scrollOffset = maxOffset;
+
+            const endIdx = convLines.length - this.scrollOffset;
+            const startIdx = Math.max(0, endIdx - availRows);
+            const visibleConv = convLines.slice(startIdx, endIdx);
+
+            const leftPad = " ".repeat(Math.max(0, Math.floor((W - boxWidth) / 2)));
+            for (let i = 0; i < visibleConv.length; i++) {
+                screen[2 + i] = leftPad + visibleConv[i];
+            }
+
+            const promptStartRow = H - 1 - promptBox.length;
+            for (let i = 0; i < promptBox.length; i++) {
+                if (promptStartRow + i >= 2) {
+                    screen[promptStartRow + i] = centerLine(promptBox[i], boxWidth);
+                }
+            }
+        }
+
+        // 3. BOTTOM FOOTER BAR (OpenCode home.footer / session footer)
+        const connBadge = this.transport.connected
+            ? `${T.success}●${RESET} ${T.muted}zero-rate tunnel${RESET}`
+            : `${T.primary}◌${RESET} ${T.muted}connecting...${RESET}`;
+        const footLeft = `  ${T.muted}${shortPath(this.cwd)}${RESET}`;
+        const footRight = `${connBadge} ${T.subtle}·${RESET} ${T.muted}v1.2.0${RESET}  `;
+        const footGap = Math.max(1, W - visibleLen(footLeft) - visibleLen(footRight));
+        screen[H - 1] = footLeft + " ".repeat(footGap) + footRight;
+
+        // 4. CENTERED FLOATING MODAL POPUP OVERLAY
+        if (this.modal) {
+            const modalObj = this.buildModalBox();
+            if (modalObj) {
+                const mTop = Math.max(1, Math.floor((H - modalObj.lines.length) / 2));
+                for (let i = 0; i < modalObj.lines.length && mTop + i < H - 1; i++) {
+                    screen[mTop + i] = centerLine(modalObj.lines[i], modalObj.width);
+                }
+            }
+        }
+
+        // Flush frame atomically from top-left
+        const out = "\x1b[H" + screen.map((row) => `\x1b[2K${row}`).join("\n");
+        process.stdout.write(out);
     }
 }
 
 if (process.argv.includes("--version") || process.argv.includes("-v")) {
-    console.log("waharness 1.1.1");
+    console.log("waharness 1.2.0");
     process.exit(0);
 }
 
-const cli = new WaHarnessCLI();
-cli.start();
+const app = new WaHarnessTUI();
+app.start();
