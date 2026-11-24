@@ -2,33 +2,103 @@
 
 const readline = require("readline");
 const fs = require("fs");
-const qrcode = require("qrcode-terminal");
+const os = require("os");
+const path = require("path");
 const WhatsAppTransport = require("./transport");
 const { executeCommand, readFile, writeFile, listDirectory } = require("./tools");
 
-// ANSI Styling
+let qrcode = null;
+try {
+    qrcode = require("qrcode-terminal");
+} catch (_) {}
+
+// OpenCode Color Palette (24-bit / 256-color fallback ANSI)
 const C = {
     reset: "\x1b[0m",
-    bright: "\x1b[1m",
+    bold: "\x1b[1m",
     dim: "\x1b[2m",
-    cyan: "\x1b[36m",
-    green: "\x1b[32m",
-    yellow: "\x1b[33m",
-    blue: "\x1b[34m",
-    magenta: "\x1b[35m",
-    red: "\x1b[31m",
-    gray: "\x1b[90m"
+    italic: "\x1b[3m",
+    white: "\x1b[97m",
+    gray: "\x1b[90m",
+    slate: "\x1b[38;5;244m",
+    darkGray: "\x1b[38;5;238m",
+    amber: "\x1b[38;5;214m",
+    cyan: "\x1b[38;5;81m",
+    green: "\x1b[38;5;114m",
+    purple: "\x1b[38;5;141m",
+    red: "\x1b[38;5;203m",
+    yellow: "\x1b[38;5;221m"
 };
 
-const BANNER = `
-${C.cyan}${C.bright}┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃                      W A H A R N E S S  v1.0.4                   ┃
-┃       Zero-Rated AI Agent Terminal • Isolated T450 Session       ┃
-┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛${C.reset}
-${C.gray}Engine: ${C.green}AGY (Gemini/Claude) & Hermes (DeepSeek)${C.gray} | Channel: ${C.blue}Isolated Self-Chat (!WAH_)${C.reset}
-${C.gray}Workspace: ${C.yellow}${process.cwd()}${C.reset}
-${C.dim}Type your coding request or /help for commands.${C.reset}
-`;
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+function shortPath(p) {
+    const home = os.homedir();
+    if (p === home) return "~";
+    if (p.startsWith(home + path.sep)) return "~" + p.slice(home.length);
+    return p;
+}
+
+function renderOpenCodeHeader(cwd, model, connected) {
+    const statusDot = connected ? `${C.green}●${C.reset}` : `${C.amber}◌${C.reset}`;
+    const ws = shortPath(cwd);
+    return [
+        "",
+        `  ${C.slate}█░█░█ ▄▀█ ${C.white}${C.bold}█░█ ▄▀█ █▀█ █▄░█ █▀▀ █▀ █▀${C.reset}   ${C.darkGray}v1.0.5${C.reset}`,
+        `  ${C.slate}▀▄▀▄▀ █▀█ ${C.white}${C.bold}█▀█ █▀█ █▀▄ █░▀█ ██▄ ▄█ ▄█${C.reset}   ${statusDot} ${C.slate}zero-rate tunnel${C.reset}`,
+        "",
+        `  ${C.darkGray}┌──────────────────────────────────────────────────────────────┐${C.reset}`,
+        `  ${C.darkGray}│${C.reset} ${C.slate}Workspace${C.reset}  ${C.white}${ws.padEnd(49)}${C.reset} ${C.darkGray}│${C.reset}`,
+        `  ${C.darkGray}│${C.reset} ${C.slate}Agent    ${C.reset}  ${C.amber}▣ ${model.padEnd(47)}${C.reset} ${C.darkGray}│${C.reset}`,
+        `  ${C.darkGray}│${C.reset} ${C.slate}Commands ${C.reset}  ${C.gray}/models  /new  /status  /exec  /clear  /exit     ${C.reset} ${C.darkGray}│${C.reset}`,
+        `  ${C.darkGray}└──────────────────────────────────────────────────────────────┘${C.reset}`,
+        ""
+    ].join("\n");
+}
+
+function formatMarkdownLines(text) {
+    const rawLines = (text || "").replace(/\r\n/g, "\n").split("\n");
+    const out = [];
+    let inCode = false;
+    let codeLang = "";
+
+    for (const line of rawLines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith("```")) {
+            if (!inCode) {
+                inCode = true;
+                codeLang = trimmed.slice(3).trim() || "code";
+                out.push(`  ${C.purple}┃${C.reset}  ${C.darkGray}┌── ${C.slate}${codeLang}${C.darkGray} ────────────────────────────────────────${C.reset}`);
+            } else {
+                inCode = false;
+                out.push(`  ${C.purple}┃${C.reset}  ${C.darkGray}└────────────────────────────────────────────────────${C.reset}`);
+            }
+            continue;
+        }
+
+        if (inCode) {
+            out.push(`  ${C.purple}┃${C.reset}  ${C.darkGray}│${C.reset} ${C.cyan}${line}${C.reset}`);
+            continue;
+        }
+
+        let formatted = line;
+        // Headings
+        if (/^#{1,3}\s+/.test(formatted)) {
+            formatted = `${C.amber}${C.bold}${formatted.replace(/^#{1,3}\s+/, "")}${C.reset}`;
+        } else {
+            // Bold **text**
+            formatted = formatted.replace(/\*\*([^*]+)\*\*/g, `${C.white}${C.bold}$1${C.reset}`);
+            // Inline `code`
+            formatted = formatted.replace(/`([^`]+)`/g, `${C.cyan}$1${C.reset}`);
+            // Bullet points
+            if (/^\s*[-*]\s+/.test(formatted)) {
+                formatted = formatted.replace(/^(\s*)[-*]\s+/, `$1${C.amber}•${C.reset} `);
+            }
+        }
+        out.push(`  ${C.purple}┃${C.reset}  ${formatted}`);
+    }
+    return out.join("\n");
+}
 
 class WaHarnessCLI {
     constructor() {
@@ -38,28 +108,67 @@ class WaHarnessCLI {
         this.rl = null;
         this.inFlight = false;
         this.activeReqId = null;
+        this.spinnerTimer = null;
+        this.spinnerFrame = 0;
+        this.spinnerStart = 0;
+        this.spinnerStatus = "Thinking...";
+    }
+
+    startSpinner(statusText = "Thinking...") {
+        this.stopSpinner();
+        this.spinnerStatus = statusText;
+        this.spinnerStart = Date.now();
+        this.spinnerFrame = 0;
+
+        const render = () => {
+            const frame = SPINNER_FRAMES[this.spinnerFrame % SPINNER_FRAMES.length];
+            this.spinnerFrame++;
+            const elapsed = ((Date.now() - this.spinnerStart) / 1000).toFixed(1);
+            process.stdout.write(
+                `\r\x1b[2K  ${C.purple}┃${C.reset}  ${C.amber}${frame}${C.reset} ${C.slate}${this.spinnerStatus}${C.reset} ${C.darkGray}(${elapsed}s)${C.reset}`
+            );
+        };
+        render();
+        this.spinnerTimer = setInterval(render, 80);
+    }
+
+    updateSpinner(statusText) {
+        this.spinnerStatus = statusText;
+    }
+
+    stopSpinner() {
+        if (this.spinnerTimer) {
+            clearInterval(this.spinnerTimer);
+            this.spinnerTimer = null;
+            process.stdout.write("\r\x1b[2K");
+        }
     }
 
     async start() {
         console.clear();
-        console.log(BANNER);
-        process.stdout.write(`${C.yellow}⟳ Connecting to WhatsApp Zero-Rate Tunnel...${C.reset}\r`);
+        console.log(renderOpenCodeHeader(this.cwd, this.activeModel, false));
+        this.startSpinner("Connecting to zero-rate WhatsApp tunnel...");
 
         this.transport.on("qr", (qr) => {
-            console.log(`\n${C.yellow}Scan this QR code in WhatsApp -> Linked Devices:${C.reset}\n`);
-            qrcode.generate(qr, { small: true });
+            this.stopSpinner();
+            console.log(`\n  ${C.amber}Scan QR code in WhatsApp -> Linked Devices:${C.reset}\n`);
+            if (qrcode) qrcode.generate(qr, { small: true });
         });
 
-        this.transport.on("ready", (info) => {
-            console.log(`\r${C.green}✓ Connected! Isolated Channel Target: ${info?.targetChat || this.transport.targetChat}${C.reset}       \n`);
-            this.promptUser();
+        this.transport.on("ready", ({ isFirst }) => {
+            if (isFirst) {
+                this.stopSpinner();
+                console.clear();
+                console.log(renderOpenCodeHeader(this.cwd, this.activeModel, true));
+                this.promptUser();
+            }
         });
 
-        this.transport.on("disconnected", (data) => {
-            if (data.shouldReconnect) {
-                console.log(`\n${C.yellow}⚠ Transport connection dropped. Reconnecting...${C.reset}`);
-            } else {
-                console.log(`\n${C.red}✗ WhatsApp session logged out. Delete ~/.waharness/auth_info to re-pair.${C.reset}`);
+        this.transport.on("disconnected", ({ shouldReconnect }) => {
+            // Reconnect silently in background unless logged out permanently
+            if (!shouldReconnect) {
+                this.stopSpinner();
+                console.log(`\n  ${C.red}✗ Session logged out. Delete ~/.waharness/auth_info to re-pair.${C.reset}\n`);
             }
         });
 
@@ -69,11 +178,16 @@ class WaHarnessCLI {
         this.setupReadline();
     }
 
+    getPromptString() {
+        const ws = path.basename(this.cwd) || "~";
+        return `  ${C.amber}▣${C.reset} ${C.slate}${this.activeModel}${C.reset} ${C.darkGray}·${C.reset} ${C.gray}${ws}${C.reset} ${C.white}${C.bold}❯${C.reset} `;
+    }
+
     setupReadline() {
         this.rl = readline.createInterface({
             input: process.stdin,
             output: process.stdout,
-            prompt: `${C.cyan}${C.bright}waharness${C.reset} ${C.gray}(${this.activeModel})${C.reset} ${C.dim}❯${C.reset} `
+            prompt: this.getPromptString()
         });
 
         this.rl.on("line", async (line) => {
@@ -93,20 +207,15 @@ class WaHarnessCLI {
         });
 
         this.rl.on("close", () => {
-            console.log(`\n${C.cyan}Exiting WaHarness. Keep hacking!${C.reset}`);
+            this.stopSpinner();
+            console.log(`\n  ${C.slate}Session closed.${C.reset}\n`);
             process.exit(0);
         });
     }
 
-    updatePromptPrefix() {
-        if (this.rl) {
-            this.rl.setPrompt(`${C.cyan}${C.bright}waharness${C.reset} ${C.gray}(${this.activeModel})${C.reset} ${C.dim}❯${C.reset} `);
-        }
-    }
-
     promptUser() {
         if (this.rl && !this.inFlight) {
-            this.updatePromptPrefix();
+            this.rl.setPrompt(this.getPromptString());
             this.rl.prompt();
         }
     }
@@ -119,86 +228,138 @@ class WaHarnessCLI {
         }
     }
 
+    async waitForConnection(maxWaitMs = 8000) {
+        const start = Date.now();
+        while (!this.transport.connected && Date.now() - start < maxWaitMs) {
+            await new Promise((r) => setTimeout(r, 250));
+        }
+        return this.transport.connected;
+    }
+
     async handleSlashCommand(cmd) {
-        const parts = cmd.split(" ");
+        const parts = cmd.split(/\s+/);
         const action = parts[0].toLowerCase();
 
         switch (action) {
             case "/help":
-                console.log(`\n${C.bright}Available Commands:${C.reset}`);
-                console.log(`  ${C.green}/model <name>${C.reset}    Switch engine (agy, deepseek-v4-pro, deepseek-flash)`);
-                console.log(`  ${C.green}/new${C.reset}             Reset isolated T450 session for this workspace`);
-                console.log(`  ${C.green}/status${C.reset}          Show connection, target JID, model, and auth path`);
-                console.log(`  ${C.green}/exec <cmd>${C.reset}      Run a local Mac shell command directly`);
-                console.log(`  ${C.green}/clear${C.reset}           Clear terminal screen`);
-                console.log(`  ${C.green}/exit${C.reset}            Quit WaHarness\n`);
+                console.log([
+                    "",
+                    `  ${C.white}${C.bold}Commands${C.reset}`,
+                    `  ${C.amber}/models${C.reset} ${C.slate}or${C.reset} ${C.amber}/model <id>${C.reset}   Switch agent engine (agy, deepseek-v4-pro, deepseek-flash)`,
+                    `  ${C.amber}/new${C.reset}                     Start a fresh isolated session for this workspace`,
+                    `  ${C.amber}/status${C.reset}                  Inspect tunnel connection, JID, and workspace`,
+                    `  ${C.amber}/exec <cmd>${C.reset}              Execute a local macOS shell command`,
+                    `  ${C.amber}/clear${C.reset}                   Clear terminal view`,
+                    `  ${C.amber}/exit${C.reset}                    Exit WaHarness`,
+                    ""
+                ].join("\n"));
                 break;
-            case "/status":
-                console.log(`\n${C.bright}WaHarness Status:${C.reset}`);
-                console.log(`  Connected:  ${this.transport.connected ? C.green + "Online" : C.red + "Offline"}${C.reset}`);
-                console.log(`  Target JID: ${C.blue}${this.transport.targetChat || "waiting"}${C.reset}`);
-                console.log(`  Auth Dir:   ${C.gray}${this.transport.authDir}${C.reset}`);
-                console.log(`  Model:      ${C.cyan}${this.activeModel}${C.reset}`);
-                console.log(`  Workspace:  ${C.yellow}${this.cwd}${C.reset}\n`);
-                break;
+
+            case "/models":
             case "/model":
                 if (parts[1]) {
                     this.activeModel = parts[1].trim();
-                    this.updatePromptPrefix();
-                    console.log(`\n${C.green}✓ Active engine switched to: ${this.activeModel}${C.reset}\n`);
+                    console.log(`\n  ${C.green}✓${C.reset} ${C.slate}Switched agent model to${C.reset} ${C.white}${C.bold}${this.activeModel}${C.reset}\n`);
                 } else {
-                    console.log(`\n${C.yellow}Current model: ${this.activeModel}. Usage: /model <agy | deepseek-v4-pro | deepseek-flash>${C.reset}\n`);
+                    const models = [
+                        ["agy", "Google Antigravity (Gemini / Claude Sonnet) [Isolated T450]"],
+                        ["deepseek-v4-pro", "Hermes DeepSeek V4 Pro [Isolated T450]"],
+                        ["deepseek-flash", "Hermes DeepSeek V4.1 Flash [Isolated T450]"]
+                    ];
+                    console.log(`\n  ${C.white}${C.bold}Available Models${C.reset}`);
+                    for (const [id, desc] of models) {
+                        const mark = id === this.activeModel ? `${C.amber}●${C.reset}` : ` `;
+                        console.log(`  ${mark} ${C.white}${id.padEnd(18)}${C.reset} ${C.slate}${desc}${C.reset}`);
+                    }
+                    console.log(`\n  ${C.darkGray}Use /model <name> to switch.${C.reset}\n`);
                 }
                 break;
+
+            case "/status":
+                console.log([
+                    "",
+                    `  ${C.white}${C.bold}Session Status${C.reset}`,
+                    `  ${C.slate}Tunnel   ${C.reset}  ${this.transport.connected ? C.green + "● connected" : C.amber + "◌ reconnecting"}${C.reset}`,
+                    `  ${C.slate}Channel  ${C.reset}  ${C.white}${this.transport.targetChat || "self-chat"} (!WAH_ isolated)${C.reset}`,
+                    `  ${C.slate}Agent    ${C.reset}  ${C.amber}${this.activeModel}${C.reset}`,
+                    `  ${C.slate}Workspace${C.reset}  ${C.white}${this.cwd}${C.reset}`,
+                    `  ${C.slate}Auth     ${C.reset}  ${C.gray}${this.transport.authDir}${C.reset}`,
+                    ""
+                ].join("\n"));
+                break;
+
             case "/new":
-                if (!this.transport.connected) {
-                    console.log(`${C.red}Transport is offline.${C.reset}`);
+                if (!(await this.waitForConnection())) {
+                    console.log(`\n  ${C.red}✗ Tunnel offline.${C.reset}\n`);
                     return;
                 }
                 const reqId = Math.random().toString(36).substring(2, 10);
                 this.inFlight = true;
+                console.log("");
+                this.startSpinner("Resetting workspace session...");
                 await this.transport.sendMessage("!WAH_CMD:" + JSON.stringify({
                     id: reqId,
                     cmd: "new",
                     cwd: this.cwd
                 }));
                 break;
+
             case "/clear":
                 console.clear();
-                console.log(BANNER);
+                console.log(renderOpenCodeHeader(this.cwd, this.activeModel, this.transport.connected));
                 break;
+
             case "/exec":
-                const localCmd = parts.slice(1).join(" ");
+                const localCmd = cmd.slice(action.length).trim();
                 if (!localCmd) {
-                    console.log(`${C.yellow}Usage: /exec <command>${C.reset}`);
+                    console.log(`\n  ${C.slate}Usage: /exec <command>${C.reset}\n`);
                     return;
                 }
+                console.log(`\n  ${C.darkGray}┃${C.reset} ${C.slate}$ ${localCmd}${C.reset}`);
                 const res = await executeCommand(localCmd, this.cwd);
-                if (res.out) console.log(res.out.trim());
-                if (res.err) console.error(C.red + res.err.trim() + C.reset);
+                if (res.out) {
+                    for (const l of res.out.trimEnd().split("\n")) {
+                        console.log(`  ${C.darkGray}┃${C.reset} ${l}`);
+                    }
+                }
+                if (res.err) {
+                    for (const l of res.err.trimEnd().split("\n")) {
+                        console.log(`  ${C.darkGray}┃${C.reset} ${C.red}${l}${C.reset}`);
+                    }
+                }
+                console.log("");
                 break;
+
             case "/exit":
             case "/quit":
                 this.rl.close();
                 break;
+
             default:
-                console.log(`${C.red}Unknown command: ${action}. Type /help for assistance.${C.reset}`);
+                console.log(`\n  ${C.red}Unknown command:${C.reset} ${action}. Type ${C.amber}/help${C.reset} for commands.\n`);
                 break;
         }
     }
 
     async dispatchPrompt(userPrompt) {
-        if (!this.transport.connected) {
-            console.log(`${C.red}Cannot send prompt: Transport is currently offline.${C.reset}`);
+        // Move cursor up 1 line to replace raw readline prompt with OpenCode user card
+        process.stdout.write("\x1b[1A\r\x1b[2K");
+        console.log(`  ${C.amber}┃${C.reset}  ${C.white}${C.bold}${userPrompt}${C.reset}`);
+        console.log(`  ${C.purple}┃${C.reset}`);
+
+        this.inFlight = true;
+        this.startSpinner(`Thinking (${this.activeModel})...`);
+
+        if (!(await this.waitForConnection(8000))) {
+            this.stopSpinner();
+            console.log(`  ${C.purple}┃${C.reset}  ${C.red}✗ Tunnel is currently offline. Please wait a moment and try again.${C.reset}\n`);
+            this.inFlight = false;
             this.promptUser();
             return;
         }
 
-        this.inFlight = true;
         const reqId = Math.random().toString(36).substring(2, 10);
         this.activeReqId = reqId;
-
-        console.log(`\n${C.magenta}⚡ [Sending to T450 Isolated Session (${this.activeModel})...]${C.reset}`);
 
         const packet = "!WAH_PROMPT:" + JSON.stringify({
             id: reqId,
@@ -212,7 +373,8 @@ class WaHarnessCLI {
         try {
             await this.transport.sendMessage(packet);
         } catch (e) {
-            console.log(`${C.red}Failed to send prompt over WhatsApp: ${e.message}${C.reset}`);
+            this.stopSpinner();
+            console.log(`  ${C.purple}┃${C.reset}  ${C.red}✗ Send failed: ${e.message}${C.reset}\n`);
             this.inFlight = false;
             this.promptUser();
         }
@@ -226,7 +388,7 @@ class WaHarnessCLI {
             try {
                 const req = JSON.parse(rawJson.trim());
                 const detail = req.cmd || req.path || ".";
-                console.log(`\n${C.blue}⚙ [Mac Tool] ${C.bright}${req.action}${C.reset} ${C.gray}${detail}${C.reset}`);
+                this.updateSpinner(`Running ${req.action}: ${detail}`);
 
                 let result = {};
                 if (req.action === "bash" || req.action === "exec") {
@@ -239,7 +401,6 @@ class WaHarnessCLI {
                     result = listDirectory(req.path || ".", req.cwd || this.cwd);
                 }
 
-                // Cap large output payloads to keep WhatsApp packets fast and reliable
                 if (result.out && result.out.length > 12000) {
                     result.out = result.out.slice(0, 12000) + "\n...[truncated]...";
                 }
@@ -247,8 +408,11 @@ class WaHarnessCLI {
                     result.content = result.content.slice(0, 12000) + "\n...[truncated]...";
                 }
 
-                const statusLabel = result.error ? `${C.red}ERR` : `${C.green}OK`;
-                console.log(`  ${statusLabel}${C.reset} ${C.dim}(${result.dur || 0}s)${C.reset}`);
+                this.stopSpinner();
+                const badge = result.error ? `${C.red}✗` : `${C.green}✓`;
+                const dur = result.dur ? ` ${C.darkGray}(${result.dur}s)${C.reset}` : "";
+                console.log(`  ${C.purple}┃${C.reset}  ${badge} ${C.slate}${req.action}${C.reset} ${C.gray}${detail}${C.reset}${dur}`);
+                this.startSpinner(`Thinking (${this.activeModel})...`);
 
                 const replyPkt = `${pfx}TOOL_RES:` + JSON.stringify({
                     id: req.id,
@@ -256,7 +420,9 @@ class WaHarnessCLI {
                 });
                 await this.transport.sendMessage(replyPkt);
             } catch (e) {
-                console.error(C.red + "[Tool Error] " + e.message + C.reset);
+                this.stopSpinner();
+                console.log(`  ${C.purple}┃${C.reset}  ${C.red}✗ Tool error: ${e.message}${C.reset}`);
+                this.startSpinner(`Thinking (${this.activeModel})...`);
             }
             return;
         }
@@ -266,32 +432,34 @@ class WaHarnessCLI {
             try {
                 const data = JSON.parse(text.substring("!WAH_STREAM:".length).trim());
                 if (data.status) {
-                    console.log(`${C.dim}  ↳ ${data.status}${C.reset}`);
-                } else if (data.chunk) {
-                    process.stdout.write(data.chunk);
+                    this.updateSpinner(data.status);
                 }
-            } catch (_) {
-                process.stdout.write(text.substring("!WAH_STREAM:".length));
-            }
+            } catch (_) {}
             return;
         }
 
         // 3. Final Response from T450 Brain
         if (text.startsWith("!WAH_DONE:")) {
+            this.stopSpinner();
             try {
                 const data = JSON.parse(text.substring("!WAH_DONE:".length).trim());
                 if (data.text) {
-                    console.log(`\n${C.bright}${data.text}${C.reset}`);
+                    console.log(formatMarkdownLines(data.text));
                 }
-                console.log(`\n${C.green}✓ [Completed in ${data.dur || 0}s]${C.reset}\n`);
+                console.log(`  ${C.purple}╹${C.reset}${C.amber}▣${C.reset}  ${C.slate}${data.model || this.activeModel}${C.reset} ${C.darkGray}· ${data.dur || 0}s${C.reset}\n`);
             } catch (e) {
-                console.log(`\n${text.substring("!WAH_DONE:".length)}\n`);
+                console.log(`  ${C.purple}┃${C.reset}  ${text.substring("!WAH_DONE:".length)}\n`);
             }
             this.inFlight = false;
             this.promptUser();
             return;
         }
     }
+}
+
+if (process.argv.includes("--version") || process.argv.includes("-v")) {
+    console.log("waharness 1.0.5");
+    process.exit(0);
 }
 
 const cli = new WaHarnessCLI();

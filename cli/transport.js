@@ -1,3 +1,64 @@
+// Silence libsignal-node and Baileys internal console spam ("Closing session: SessionEntry...", etc.)
+const _origLog = console.log;
+const _origInfo = console.info;
+const _origWarn = console.warn;
+const _origError = console.error;
+
+const NOISE_PATTERNS = [
+    "Closing session",
+    "Opening session",
+    "Removing old closed session",
+    "SessionEntry",
+    "Session already closed",
+    "Session already open",
+    "Decrypted message with closed session",
+    "ephemeralKeyPair",
+    "pendingPreKey",
+    "currentRatchet",
+    "remoteIdentityKey",
+    "registrationId",
+    "Bad MAC",
+    "Failed to decrypt message"
+];
+
+function _isSignalNoise(args) {
+    for (const a of args) {
+        let s = "";
+        if (typeof a === "string") {
+            s = a;
+        } else if (a && typeof a === "object") {
+            const cname = a.constructor ? a.constructor.name : "";
+            if (cname === "SessionEntry" || a._chains || a.currentRatchet || a.indexInfo) {
+                return true;
+            }
+            try {
+                s = String(a);
+            } catch (_) {}
+        }
+        for (const pat of NOISE_PATTERNS) {
+            if (s.includes(pat)) return true;
+        }
+    }
+    return false;
+}
+
+console.log = (...args) => {
+    if (_isSignalNoise(args)) return;
+    _origLog.apply(console, args);
+};
+console.info = (...args) => {
+    if (_isSignalNoise(args)) return;
+    _origInfo.apply(console, args);
+};
+console.warn = (...args) => {
+    if (_isSignalNoise(args)) return;
+    _origWarn.apply(console, args);
+};
+console.error = (...args) => {
+    if (_isSignalNoise(args)) return;
+    _origError.apply(console, args);
+};
+
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require("@whiskeysockets/baileys");
 const path = require("path");
 const os = require("os");
@@ -11,7 +72,6 @@ class WhatsAppTransport extends EventEmitter {
         const defaultAuth = path.join(homeDir, ".waharness", "auth_info");
         const credsFile = path.join(defaultAuth, "creds.json");
 
-        // Auto-migrate existing pairing credentials if creds.json is missing
         const candidates = [
             path.join(homeDir, "Downloads", "WaHarness-Mac", "auth_info"),
             path.join(process.cwd(), "auth_info"),
@@ -31,6 +91,7 @@ class WhatsAppTransport extends EventEmitter {
         this.authDir = authDir || defaultAuth;
         this.sock = null;
         this.connected = false;
+        this.everConnected = false;
         this.targetChat = process.env.WAHARNESS_TARGET_JID || null;
     }
 
@@ -57,11 +118,13 @@ class WhatsAppTransport extends EventEmitter {
                 const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
                 this.emit("disconnected", { shouldReconnect, error: lastDisconnect?.error });
                 if (shouldReconnect) {
-                    setTimeout(() => this.init(), 3000);
+                    setTimeout(() => this.init(), 2000);
                 }
             } else if (connection === "open") {
                 this.connected = true;
-                // Default targetChat to the user's own WhatsApp account (self-chat)
+                const isFirst = !this.everConnected;
+                this.everConnected = true;
+
                 const rawUser = this.sock?.user?.id || "";
                 if (rawUser) {
                     const phone = rawUser.split(":")[0].split("@")[0];
@@ -72,7 +135,7 @@ class WhatsAppTransport extends EventEmitter {
                 if (!this.targetChat) {
                     this.targetChat = process.env.WAHARNESS_TARGET_JID || null;
                 }
-                this.emit("ready", { targetChat: this.targetChat });
+                this.emit("ready", { targetChat: this.targetChat, isFirst });
             }
         });
 
@@ -87,8 +150,6 @@ class WhatsAppTransport extends EventEmitter {
                 ).trim();
                 if (!text) continue;
 
-                // Strictly filter for WaHarness protocol packets from T450 Brain
-                // so normal personal WhatsApp chats never leak into the CLI terminal
                 if (
                     text.startsWith("!WAH_STREAM:") ||
                     text.startsWith("!WAH_TOOL_REQ:") ||
