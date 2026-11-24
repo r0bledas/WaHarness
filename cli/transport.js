@@ -1,11 +1,30 @@
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require("@whiskeysockets/baileys");
 const path = require("path");
+const os = require("os");
+const fs = require("fs");
 const EventEmitter = require("events");
 
 class WhatsAppTransport extends EventEmitter {
     constructor(authDir) {
         super();
-        this.authDir = authDir || path.join(__dirname, "../auth_info");
+        const homeDir = os.homedir();
+        const defaultAuth = path.join(homeDir, ".waharness", "auth_info");
+        
+        // Check if legacy auth_info exists in Downloads or local
+        const legacyDownloads = path.join(homeDir, "Downloads", "WaHarness-Mac", "auth_info");
+        const localAuth = path.join(__dirname, "../auth_info");
+
+        if (!fs.existsSync(defaultAuth)) {
+            if (fs.existsSync(legacyDownloads)) {
+                fs.mkdirSync(path.join(homeDir, ".waharness"), { recursive: true });
+                fs.cpSync(legacyDownloads, defaultAuth, { recursive: true });
+            } else if (fs.existsSync(localAuth)) {
+                fs.mkdirSync(path.join(homeDir, ".waharness"), { recursive: true });
+                fs.cpSync(localAuth, defaultAuth, { recursive: true });
+            }
+        }
+
+        this.authDir = authDir || defaultAuth;
         this.sock = null;
         this.connected = false;
         this.targetChat = null;
