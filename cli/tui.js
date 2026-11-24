@@ -12,7 +12,7 @@ try {
     qrcode = require("qrcode-terminal");
 } catch (_) {}
 
-// OpenCode Color Palette (24-bit / 256-color fallback ANSI)
+// OpenCode Color Palette
 const C = {
     reset: "\x1b[0m",
     bold: "\x1b[1m",
@@ -44,7 +44,7 @@ function renderOpenCodeHeader(cwd, model, connected) {
     const ws = shortPath(cwd);
     return [
         "",
-        `  ${C.slate}█░█░█ ▄▀█ ${C.white}${C.bold}█░█ ▄▀█ █▀█ █▄░█ █▀▀ █▀ █▀${C.reset}   ${C.darkGray}v1.0.5${C.reset}`,
+        `  ${C.slate}█░█░█ ▄▀█ ${C.white}${C.bold}█░█ ▄▀█ █▀█ █▄░█ █▀▀ █▀ █▀${C.reset}   ${C.darkGray}v1.0.6${C.reset}`,
         `  ${C.slate}▀▄▀▄▀ █▀█ ${C.white}${C.bold}█▀█ █▀█ █▀▄ █░▀█ ██▄ ▄█ ▄█${C.reset}   ${statusDot} ${C.slate}zero-rate tunnel${C.reset}`,
         "",
         `  ${C.darkGray}┌──────────────────────────────────────────────────────────────┐${C.reset}`,
@@ -82,15 +82,11 @@ function formatMarkdownLines(text) {
         }
 
         let formatted = line;
-        // Headings
         if (/^#{1,3}\s+/.test(formatted)) {
             formatted = `${C.amber}${C.bold}${formatted.replace(/^#{1,3}\s+/, "")}${C.reset}`;
         } else {
-            // Bold **text**
             formatted = formatted.replace(/\*\*([^*]+)\*\*/g, `${C.white}${C.bold}$1${C.reset}`);
-            // Inline `code`
             formatted = formatted.replace(/`([^`]+)`/g, `${C.cyan}$1${C.reset}`);
-            // Bullet points
             if (/^\s*[-*]\s+/.test(formatted)) {
                 formatted = formatted.replace(/^(\s*)[-*]\s+/, `$1${C.amber}•${C.reset} `);
             }
@@ -107,7 +103,9 @@ class WaHarnessCLI {
         this.transport = new WhatsAppTransport();
         this.rl = null;
         this.inFlight = false;
-        this.activeReqId = null;
+        this.activeReq = null;
+        this.completedIds = new Set();
+        this.pollTimer = null;
         this.spinnerTimer = null;
         this.spinnerFrame = 0;
         this.spinnerStart = 0;
@@ -120,12 +118,19 @@ class WaHarnessCLI {
         this.spinnerStart = Date.now();
         this.spinnerFrame = 0;
 
+        // Pause readline during spinner so accidental arrow keys don't echo or split spinner lines
+        if (this.rl) {
+            try {
+                this.rl.pause();
+            } catch (_) {}
+        }
+
         const render = () => {
             const frame = SPINNER_FRAMES[this.spinnerFrame % SPINNER_FRAMES.length];
             this.spinnerFrame++;
             const elapsed = ((Date.now() - this.spinnerStart) / 1000).toFixed(1);
             process.stdout.write(
-                `\r\x1b[2K  ${C.purple}┃${C.reset}  ${C.amber}${frame}${C.reset} ${C.slate}${this.spinnerStatus}${C.reset} ${C.darkGray}(${elapsed}s)${C.reset}`
+                `\r\x1b[2K  ${C.purple}┃${C.reset}  ${C.amber}${frame}${C.reset} ${C.slate}${this.spinnerStatus}${C.reset} ${C.darkGray}(${elapsed}s · esc to cancel)${C.reset}`
             );
         };
         render();
@@ -144,6 +149,25 @@ class WaHarnessCLI {
         }
     }
 
+    clearPollTimer() {
+        if (this.pollTimer) {
+            clearInterval(this.pollTimer);
+            this.pollTimer = null;
+        }
+    }
+
+    startPollWatchdog() {
+        this.clearPollTimer();
+        // Every 9s while inFlight, send a lightweight !WAH_POLL: packet in case
+        // a Signal ratchet or background socket reconnect dropped a packet.
+        this.pollTimer = setInterval(async () => {
+            if (!this.inFlight || !this.activeReq || !this.transport.connected) return;
+            try {
+                await this.transport.sendMessage("!WAH_POLL:" + JSON.stringify(this.activeReq));
+            } catch (_) {}
+        }, 9000);
+    }
+
     async start() {
         console.clear();
         console.log(renderOpenCodeHeader(this.cwd, this.activeModel, false));
@@ -155,19 +179,29 @@ class WaHarnessCLI {
             if (qrcode) qrcode.generate(qr, { small: true });
         });
 
-        this.transport.on("ready", ({ isFirst }) => {
+        this.transport.on("ready", async ({ isFirst }) => {
             if (isFirst) {
                 this.stopSpinner();
                 console.clear();
                 console.log(renderOpenCodeHeader(this.cwd, this.activeModel, true));
+                this.setupReadline();
                 this.promptUser();
+            } else if (this.inFlight && this.activeReq) {
+                // Immediately poll after a background reconnect so any missed DONE packet is recovered
+                setTimeout(async () => {
+                    if (this.inFlight && this.activeReq && this.transport.connected) {
+                        try {
+                            await this.transport.sendMessage("!WAH_POLL:" + JSON.stringify(this.activeReq));
+                        } catch (_) {}
+                    }
+                }, 800);
             }
         });
 
         this.transport.on("disconnected", ({ shouldReconnect }) => {
-            // Reconnect silently in background unless logged out permanently
             if (!shouldReconnect) {
                 this.stopSpinner();
+                this.clearPollTimer();
                 console.log(`\n  ${C.red}✗ Session logged out. Delete ~/.waharness/auth_info to re-pair.${C.reset}\n`);
             }
         });
@@ -175,7 +209,6 @@ class WaHarnessCLI {
         this.transport.on("message", (msg) => this.handleInbound(msg));
 
         await this.transport.init();
-        this.setupReadline();
     }
 
     getPromptString() {
@@ -184,6 +217,24 @@ class WaHarnessCLI {
     }
 
     setupReadline() {
+        if (this.rl) return;
+        readline.emitKeypressEvents(process.stdin);
+
+        // Allow Esc key to cancel an in-flight turn cleanly
+        process.stdin.on("keypress", (str, key) => {
+            if (this.inFlight && key && key.name === "escape") {
+                this.clearPollTimer();
+                this.stopSpinner();
+                if (this.activeReq && this.activeReq.id) {
+                    this.completedIds.add(this.activeReq.id);
+                }
+                this.activeReq = null;
+                this.inFlight = false;
+                console.log(`  ${C.purple}╹${C.reset}${C.red}✗${C.reset}  ${C.slate}Cancelled${C.reset}\n`);
+                this.promptUser();
+            }
+        });
+
         this.rl = readline.createInterface({
             input: process.stdin,
             output: process.stdout,
@@ -191,6 +242,7 @@ class WaHarnessCLI {
         });
 
         this.rl.on("line", async (line) => {
+            if (this.inFlight) return;
             const input = line.trim();
             if (!input) {
                 this.promptUser();
@@ -207,6 +259,7 @@ class WaHarnessCLI {
         });
 
         this.rl.on("close", () => {
+            this.clearPollTimer();
             this.stopSpinner();
             console.log(`\n  ${C.slate}Session closed.${C.reset}\n`);
             process.exit(0);
@@ -215,6 +268,9 @@ class WaHarnessCLI {
 
     promptUser() {
         if (this.rl && !this.inFlight) {
+            try {
+                this.rl.resume();
+            } catch (_) {}
             this.rl.setPrompt(this.getPromptString());
             this.rl.prompt();
         }
@@ -295,13 +351,10 @@ class WaHarnessCLI {
                 }
                 const reqId = Math.random().toString(36).substring(2, 10);
                 this.inFlight = true;
+                this.activeReq = { id: reqId, cmd: "new", cwd: this.cwd };
                 console.log("");
                 this.startSpinner("Resetting workspace session...");
-                await this.transport.sendMessage("!WAH_CMD:" + JSON.stringify({
-                    id: reqId,
-                    cmd: "new",
-                    cwd: this.cwd
-                }));
+                await this.transport.sendMessage("!WAH_CMD:" + JSON.stringify(this.activeReq));
                 break;
 
             case "/clear":
@@ -342,7 +395,6 @@ class WaHarnessCLI {
     }
 
     async dispatchPrompt(userPrompt) {
-        // Move cursor up 1 line to replace raw readline prompt with OpenCode user card
         process.stdout.write("\x1b[1A\r\x1b[2K");
         console.log(`  ${C.amber}┃${C.reset}  ${C.white}${C.bold}${userPrompt}${C.reset}`);
         console.log(`  ${C.purple}┃${C.reset}`);
@@ -359,20 +411,21 @@ class WaHarnessCLI {
         }
 
         const reqId = Math.random().toString(36).substring(2, 10);
-        this.activeReqId = reqId;
-
-        const packet = "!WAH_PROMPT:" + JSON.stringify({
+        this.activeReq = {
             id: reqId,
             prompt: userPrompt,
             cwd: this.cwd,
             model: this.activeModel,
             files: this.getTopLevelFiles(),
             ts: Math.floor(Date.now() / 1000)
-        });
+        };
+
+        this.startPollWatchdog();
 
         try {
-            await this.transport.sendMessage(packet);
+            await this.transport.sendMessage("!WAH_PROMPT:" + JSON.stringify(this.activeReq));
         } catch (e) {
+            this.clearPollTimer();
             this.stopSpinner();
             console.log(`  ${C.purple}┃${C.reset}  ${C.red}✗ Send failed: ${e.message}${C.reset}\n`);
             this.inFlight = false;
@@ -387,6 +440,9 @@ class WaHarnessCLI {
             const rawJson = text.split(/:(.+)/s)[1] || "{}";
             try {
                 const req = JSON.parse(rawJson.trim());
+                if (this.completedIds.has(`tool_${req.id}`)) return;
+                this.completedIds.add(`tool_${req.id}`);
+
                 const detail = req.cmd || req.path || ".";
                 this.updateSpinner(`Running ${req.action}: ${detail}`);
 
@@ -427,29 +483,28 @@ class WaHarnessCLI {
             return;
         }
 
-        // 2. Live Status / Streaming Update from T450 Brain
-        if (text.startsWith("!WAH_STREAM:")) {
-            try {
-                const data = JSON.parse(text.substring("!WAH_STREAM:".length).trim());
-                if (data.status) {
-                    this.updateSpinner(data.status);
-                }
-            } catch (_) {}
-            return;
-        }
-
-        // 3. Final Response from T450 Brain
+        // 2. Final Response from T450 Brain
         if (text.startsWith("!WAH_DONE:")) {
-            this.stopSpinner();
             try {
                 const data = JSON.parse(text.substring("!WAH_DONE:".length).trim());
+                if (data.id && this.completedIds.has(data.id)) {
+                    return;
+                }
+                if (data.id) {
+                    this.completedIds.add(data.id);
+                }
+                this.clearPollTimer();
+                this.stopSpinner();
                 if (data.text) {
                     console.log(formatMarkdownLines(data.text));
                 }
                 console.log(`  ${C.purple}╹${C.reset}${C.amber}▣${C.reset}  ${C.slate}${data.model || this.activeModel}${C.reset} ${C.darkGray}· ${data.dur || 0}s${C.reset}\n`);
             } catch (e) {
+                this.clearPollTimer();
+                this.stopSpinner();
                 console.log(`  ${C.purple}┃${C.reset}  ${text.substring("!WAH_DONE:".length)}\n`);
             }
+            this.activeReq = null;
             this.inFlight = false;
             this.promptUser();
             return;
@@ -458,7 +513,7 @@ class WaHarnessCLI {
 }
 
 if (process.argv.includes("--version") || process.argv.includes("-v")) {
-    console.log("waharness 1.0.5");
+    console.log("waharness 1.0.6");
     process.exit(0);
 }
 

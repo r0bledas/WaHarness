@@ -102,7 +102,10 @@ class WhatsAppTransport extends EventEmitter {
         this.sock = makeWASocket({
             auth: state,
             printQRInTerminal: false,
-            logger: require("pino")({ level: "silent" })
+            markOnlineOnConnect: false,
+            syncFullHistory: false,
+            logger: require("pino")({ level: "silent" }),
+            getMessage: async () => ({ conversation: "" })
         });
 
         this.sock.ev.on("creds.update", saveCreds);
