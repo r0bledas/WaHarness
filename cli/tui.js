@@ -22,7 +22,7 @@ const {
     buildSidebarLines
 } = require("./layout");
 
-const APP_VERSION = "1.2.3";
+const APP_VERSION = "1.2.4";
 const CONFIG_DIR = path.join(os.homedir(), ".waharness");
 const CONFIG_PATH = path.join(CONFIG_DIR, "config.json");
 
