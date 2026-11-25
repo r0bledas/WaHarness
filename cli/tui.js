@@ -7,6 +7,20 @@ const path = require("path");
 const https = require("https");
 const WhatsAppTransport = require("./transport");
 const { executeCommand, readFile, writeFile, editFile, undoLastEdit, listDirectory, globFiles, grepFiles } = require("./tools");
+const {
+    RESET,
+    BOLD,
+    THEMES,
+    visibleLen,
+    clipPlain,
+    fitAnsi,
+    padVisible,
+    canonicalToolName,
+    shouldShowSidebar,
+    computeSidebarWidth,
+    buildTabBarLine,
+    buildSidebarLines
+} = require("./layout");
 
 const APP_VERSION = "1.2.3";
 const CONFIG_DIR = path.join(os.homedir(), ".waharness");
@@ -74,64 +88,6 @@ try {
     qrcode = require("qrcode-terminal");
 } catch (_) {}
 
-const RESET = "\x1b[0m";
-const BOLD = "\x1b[1m";
-
-const THEMES = {
-    opencode: {
-        name: "OpenCode Default",
-        primary: "\x1b[38;5;215m",     // Warm Peach/Amber (#fab283)
-        secondary: "\x1b[38;5;111m",   // Soft Blue (#5c9cf5)
-        accent: "\x1b[38;5;141m",      // Lavender (#9d7cd8)
-        info: "\x1b[38;5;73m",         // Teal Cyan (#56b6c2)
-        success: "\x1b[38;5;114m",     // Mint Green (#7fd88f)
-        error: "\x1b[38;5;203m",       // Coral Red (#e06c75)
-        text: "\x1b[97m",              // Crisp White
-        muted: "\x1b[38;5;245m",       // Readable Muted Gray
-        subtle: "\x1b[38;5;240m",      // Subtle Border Gray
-        selectBg: "\x1b[48;5;215m\x1b[38;5;232m"
-    },
-    system: {
-        name: "System Native ANSI",
-        primary: "\x1b[93m",
-        secondary: "\x1b[94m",
-        accent: "\x1b[95m",
-        info: "\x1b[96m",
-        success: "\x1b[92m",
-        error: "\x1b[91m",
-        text: "\x1b[97m",
-        muted: "\x1b[90m",
-        subtle: "\x1b[90m",
-        selectBg: "\x1b[7m"
-    },
-    tokyonight: {
-        name: "Tokyo Night",
-        primary: "\x1b[38;5;117m",
-        secondary: "\x1b[38;5;141m",
-        accent: "\x1b[38;5;176m",
-        info: "\x1b[38;5;81m",
-        success: "\x1b[38;5;115m",
-        error: "\x1b[38;5;204m",
-        text: "\x1b[38;5;254m",
-        muted: "\x1b[38;5;245m",
-        subtle: "\x1b[38;5;240m",
-        selectBg: "\x1b[48;5;117m\x1b[38;5;232m"
-    },
-    catppuccin: {
-        name: "Catppuccin Mocha",
-        primary: "\x1b[38;5;216m",
-        secondary: "\x1b[38;5;183m",
-        accent: "\x1b[38;5;183m",
-        info: "\x1b[38;5;117m",
-        success: "\x1b[38;5;151m",
-        error: "\x1b[38;5;211m",
-        text: "\x1b[38;5;255m",
-        muted: "\x1b[38;5;246m",
-        subtle: "\x1b[38;5;240m",
-        selectBg: "\x1b[48;5;183m\x1b[38;5;232m"
-    }
-};
-
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 // Clean 3-row geometric OpenCode-style block wordmark (46 cols exact per row: 10 + 2 + 34)
@@ -182,69 +138,19 @@ const MODEL_CATALOG = [
 const SLASH_COMMANDS = [
     { cmd: "/models", title: "Switch model", desc: "Open 29-model selector popup" },
     { cmd: "/mode", title: "Toggle Build / Plan", desc: "Switch Build (read/write) <-> Plan (read-only)" },
-    { cmd: "/theme", title: "Switch theme", desc: "Open live theme selector popup" },
+    { cmd: "/sidebar", title: "Toggle right sidebar", desc: "Show/hide context & files sidebar (Ctrl+B)" },
+    { cmd: "/tab", title: "Manage session tabs", desc: "Usage: /tab new | close | next | prev" },
+    { cmd: "/rename", title: "Rename chat tab", desc: "Usage: /rename <title>" },
+    { cmd: "/theme", title: "Switch theme", desc: "Open live OpenCode v2 theme selector" },
     { cmd: "/new", title: "New session", desc: "Reset isolated T450 session for this workspace" },
     { cmd: "/cd", title: "Change directory", desc: "Usage: /cd <path>" },
     { cmd: "/undo", title: "Undo last edit", desc: "Revert the last agent file edit" },
     { cmd: "/status", title: "Session status", desc: "Inspect tunnel, JID, model & workspace" },
     { cmd: "/update", title: "Check & install updates", desc: "Check latest release & run brew upgrade waharness" },
     { cmd: "/clear", title: "Clear screen", desc: "Return to centered Home view" },
-    { cmd: "/help", title: "Shortcuts & help", desc: "Show commands, !shell, @file & keys" },
+    { cmd: "/help", title: "Shortcuts & help", desc: "Show commands, tabs, sidebar, !shell & @file" },
     { cmd: "/exit", title: "Exit WaHarness", desc: "Quit WaHarness TUI" }
 ];
-
-const ANSI_RE = /\x1b\[[0-9;]*m/g;
-
-function stripAnsi(s) {
-    return String(s || "").replace(ANSI_RE, "");
-}
-
-function visibleLen(s) {
-    return Array.from(stripAnsi(s)).length;
-}
-
-function clipPlain(s, maxLen) {
-    if (maxLen <= 0) return "";
-    const chars = Array.from(String(s || ""));
-    if (chars.length <= maxLen) return chars.join("");
-    if (maxLen === 1) return "…";
-    return chars.slice(0, maxLen - 1).join("") + "…";
-}
-
-// Truncate an ANSI-colored string to an exact visible width so borders and terminal rows NEVER wrap
-function fitAnsi(str, maxWidth) {
-    if (maxWidth <= 0) return "";
-    const s = String(str || "");
-    let out = "";
-    let vis = 0;
-    let i = 0;
-    while (i < s.length) {
-        if (s[i] === "\x1b" && s[i + 1] === "[") {
-            const end = s.indexOf("m", i);
-            if (end !== -1) {
-                out += s.slice(i, end + 1);
-                i = end + 1;
-                continue;
-            }
-        }
-        const cp = s.codePointAt(i);
-        const ch = String.fromCodePoint(cp);
-        if (vis + 1 > maxWidth) {
-            break;
-        }
-        out += ch;
-        vis += 1;
-        i += ch.length;
-    }
-    return out + RESET;
-}
-
-function padVisible(s, width) {
-    const v = visibleLen(s);
-    if (v > width) return fitAnsi(s, width);
-    if (v === width) return s;
-    return s + " ".repeat(width - v);
-}
 
 function shortPath(p) {
     const home = os.homedir();
@@ -280,11 +186,14 @@ class WaHarnessTUI {
         this.activeModel = saved.model || "gemini-4-argon-medium";
         this.mode = "build"; // "build" | "plan"
         this.themeName = (saved.theme && THEMES[saved.theme]) ? saved.theme : "opencode";
+        this.sidebarMode = saved.sidebarMode || "auto"; // "auto" | "show" | "hide"
         this.updateAvailable = null;
         this.transport = new WhatsAppTransport();
 
-        this.messages = [];
-        this.scrollOffset = 0;
+        this.tabs = [this.createTab()];
+        this.activeTabIdx = 0;
+        this.inFlightTabIdx = -1;
+
         this.inputBuffer = "";
         this.cursorPos = 0;
         this.slashIdx = 0;
@@ -306,6 +215,85 @@ class WaHarnessTUI {
         this.toast = null;
         this.toastTimer = null;
         this.qrLines = null;
+    }
+
+    createTab(title = "New session") {
+        return {
+            id: Math.random().toString(36).substring(2, 10),
+            title,
+            cwd: this.cwd,
+            messages: [],
+            scrollOffset: 0,
+            modifiedFiles: new Map(),
+            contextFiles: new Set(),
+            toolCount: 0,
+            busy: false,
+            unread: false
+        };
+    }
+
+    get activeTab() {
+        if (!this.tabs[this.activeTabIdx]) {
+            this.activeTabIdx = 0;
+            if (this.tabs.length === 0) this.tabs.push(this.createTab());
+        }
+        return this.tabs[this.activeTabIdx];
+    }
+
+    get messages() {
+        return this.activeTab.messages;
+    }
+
+    set messages(val) {
+        this.activeTab.messages = val;
+    }
+
+    get scrollOffset() {
+        return this.activeTab.scrollOffset;
+    }
+
+    set scrollOffset(val) {
+        this.activeTab.scrollOffset = val;
+    }
+
+    openNewTab() {
+        const tab = this.createTab();
+        this.tabs.push(tab);
+        this.activeTabIdx = this.tabs.length - 1;
+        this.showToast(`Opened tab ${this.activeTabIdx + 1}`);
+    }
+
+    closeCurrentTab() {
+        if (this.tabs.length <= 1) {
+            this.tabs[0] = this.createTab();
+            this.activeTabIdx = 0;
+            this.showToast("Reset session to Home");
+            return;
+        }
+        this.tabs.splice(this.activeTabIdx, 1);
+        this.activeTabIdx = Math.max(0, Math.min(this.activeTabIdx, this.tabs.length - 1));
+        this.activeTab.unread = false;
+        this.showToast(`Switched to tab ${this.activeTabIdx + 1}: ${this.activeTab.title}`);
+    }
+
+    switchTab(deltaOrIndex, absolute = false) {
+        if (this.tabs.length <= 1) return;
+        if (absolute) {
+            if (deltaOrIndex >= 0 && deltaOrIndex < this.tabs.length) {
+                this.activeTabIdx = deltaOrIndex;
+            }
+        } else {
+            this.activeTabIdx = (this.activeTabIdx + deltaOrIndex + this.tabs.length) % this.tabs.length;
+        }
+        this.activeTab.unread = false;
+        this.render();
+    }
+
+    toggleSidebar() {
+        const currentlyVisible = shouldShowSidebar(this.cols, this.sidebarMode, this.messages.length > 0 || this.inFlight);
+        this.sidebarMode = currentlyVisible ? "hide" : "show";
+        this.persistPreferences();
+        this.showToast(`Sidebar ${currentlyVisible ? "hidden" : "shown"} (Ctrl+B)`);
     }
 
     get T() {
@@ -333,7 +321,8 @@ class WaHarnessTUI {
     persistPreferences() {
         saveUserConfig({
             model: this.activeModel,
-            theme: this.themeName
+            theme: this.themeName,
+            sidebarMode: this.sidebarMode
         });
     }
 
@@ -446,6 +435,34 @@ class WaHarnessTUI {
             // Global Ctrl+P -> Open Centered Command Palette Popup
             if (key.ctrl && key.name === "p") {
                 this.openCommandPaletteModal();
+                return;
+            }
+
+            // Global Ctrl+B -> Toggle Right Sidebar
+            if (key.ctrl && key.name === "b") {
+                this.toggleSidebar();
+                return;
+            }
+
+            // Global Ctrl+T -> Open New Session Tab
+            if (key.ctrl && key.name === "t") {
+                this.openNewTab();
+                return;
+            }
+
+            // Global Ctrl+W -> Close Current Session Tab
+            if (key.ctrl && key.name === "w") {
+                this.closeCurrentTab();
+                return;
+            }
+
+            // Alt+Left / Alt+Right -> Switch Session Tabs
+            if (key.meta && key.name === "left") {
+                this.switchTab(-1);
+                return;
+            }
+            if (key.meta && key.name === "right") {
+                this.switchTab(1);
                 return;
             }
 
@@ -894,6 +911,8 @@ class WaHarnessTUI {
         }
         this.activeReq = null;
         this.inFlight = false;
+        const tab = this.tabs[this.inFlightTabIdx] || this.activeTab;
+        tab.busy = false;
         this.messages.push({ role: "system", text: "✗ Turn cancelled by user." });
         this.render();
     }
@@ -1042,6 +1061,44 @@ class WaHarnessTUI {
                 this.showToast(`Switched mode to ${this.mode.toUpperCase()}`);
                 break;
 
+            case "/sidebar":
+                if (arg.toLowerCase() === "auto") {
+                    this.sidebarMode = "auto";
+                    this.persistPreferences();
+                    this.showToast("Sidebar set to AUTO (visible > 120 cols)");
+                } else {
+                    this.toggleSidebar();
+                }
+                break;
+
+            case "/tab": {
+                const sub = (arg || "").trim().toLowerCase();
+                if (!sub || sub === "new") {
+                    this.openNewTab();
+                } else if (sub === "close") {
+                    this.closeCurrentTab();
+                } else if (sub === "next") {
+                    this.switchTab(1);
+                } else if (sub === "prev" || sub === "previous") {
+                    this.switchTab(-1);
+                } else if (/^\d+$/.test(sub)) {
+                    const idx = parseInt(sub, 10) - 1;
+                    this.switchTab(idx, true);
+                } else {
+                    this.showToast("Usage: /tab new | close | next | prev | <number>");
+                }
+                break;
+            }
+
+            case "/rename":
+                if (!arg) {
+                    this.showToast(`Current tab: "${this.activeTab.title}" (Usage: /rename <title>)`);
+                } else {
+                    this.activeTab.title = arg.trim();
+                    this.showToast(`Renamed tab to "${this.activeTab.title}"`);
+                }
+                break;
+
             case "/cd":
                 if (!arg) {
                     this.showToast(`Workspace: ${shortPath(this.cwd)} (Usage: /cd <path>)`);
@@ -1079,14 +1136,17 @@ class WaHarnessTUI {
             case "/help":
                 this.openInfoModal("OpenCode Shortcuts & Commands", [
                     "Ctrl+P         : Open centered Command Palette popup",
+                    "Ctrl+B         : Toggle right sidebar (context, files, chat name)",
+                    "Ctrl+T / W     : Open new session tab / close current tab",
+                    "Alt+Left/Right : Switch between open session tabs",
                     "/models        : Open centered 29-model selector popup",
-                    "/theme         : Open centered live theme switcher popup",
+                    "/theme         : Open live OpenCode v2 theme switcher popup",
+                    "/rename <name> : Rename the current session tab",
                     "Tab            : Toggle Build <-> Plan mode (or complete /cmd)",
-                    "!<command>     : Execute local Mac shell command (!git status)",
-                    "@<filepath>    : Attach local Mac file into prompt (@app.js)",
-                    "/cd <dir>      : Switch active Mac directory & isolated session",
+                    "!<command>     : Execute local shell command (!git status)",
+                    "@<filepath>    : Attach local file into prompt (@app.js)",
+                    "/cd <dir>      : Switch active directory & isolated session",
                     "/undo          : Revert last file edit made by the agent",
-                    "/new           : Reset isolated T450 session for this workspace",
                     "PgUp / PgDn    : Scroll conversation history",
                     "Esc            : Dismiss popup or cancel in-flight turn"
                 ]);
@@ -1183,7 +1243,14 @@ class WaHarnessTUI {
 
     async dispatchPrompt(userPrompt) {
         const attachments = this.resolveInlineMentions(userPrompt);
-        this.messages.push({
+        const tab = this.activeTab;
+        if (tab.title === "New session" && userPrompt.trim()) {
+            tab.title = clipPlain(userPrompt.trim().replace(/\s+/g, " "), 32);
+        }
+        for (const att of Object.keys(attachments)) {
+            tab.contextFiles.add(att);
+        }
+        tab.messages.push({
             role: "user",
             text: userPrompt,
             mode: this.mode,
@@ -1191,12 +1258,15 @@ class WaHarnessTUI {
         });
 
         this.inFlight = true;
+        this.inFlightTabIdx = this.activeTabIdx;
+        tab.busy = true;
         this.startSpinner(`Thinking (${this.activeModel})...`);
 
         if (!(await this.waitForConnection(8000))) {
             this.stopSpinner();
             this.inFlight = false;
-            this.messages.push({
+            tab.busy = false;
+            tab.messages.push({
                 role: "system",
                 text: "✗ Tunnel is currently offline. Wait a moment for automatic reconnect."
             });
@@ -1307,9 +1377,22 @@ class WaHarnessTUI {
                     }
                 }
 
-                this.messages.push({
+                const tab = this.tabs[this.inFlightTabIdx] || this.activeTab;
+                tab.toolCount = (tab.toolCount || 0) + 1;
+                if ((req.action === "read_file" || req.action === "grep" || req.action === "search" || req.action === "glob") && req.path) {
+                    tab.contextFiles.add(req.path);
+                }
+                if ((req.action === "write_file" || req.action === "edit_file") && !result.error && req.path) {
+                    const prev = tab.modifiedFiles.get(req.path) || { added: 0, removed: 0 };
+                    tab.modifiedFiles.set(req.path, {
+                        added: prev.added + (result.added || 0),
+                        removed: prev.removed + (result.removed || 0)
+                    });
+                }
+
+                tab.messages.push({
                     role: "tool",
-                    action: req.action === "bash" ? "shell" : req.action,
+                    action: canonicalToolName(req.action),
                     detail,
                     dur: result.dur,
                     ok: !result.error,
@@ -1333,6 +1416,11 @@ class WaHarnessTUI {
         }
 
         if (text.startsWith("!WAH_DONE:")) {
+            const targetTab = this.tabs[this.inFlightTabIdx] || this.activeTab;
+            targetTab.busy = false;
+            if (this.inFlightTabIdx !== -1 && this.inFlightTabIdx !== this.activeTabIdx) {
+                targetTab.unread = true;
+            }
             try {
                 const data = JSON.parse(text.substring("!WAH_DONE:".length).trim());
                 if (data.id && this.completedIds.has(data.id)) return;
@@ -1352,7 +1440,7 @@ class WaHarnessTUI {
                 this.stopSpinner();
                 this.activeReq = null;
                 this.inFlight = false;
-                this.messages.push({
+                targetTab.messages.push({
                     role: "assistant",
                     text: text.substring("!WAH_DONE:".length),
                     model: this.activeModel,
@@ -1461,9 +1549,9 @@ class WaHarnessTUI {
 
                 if (Array.isArray(m.diffPreview)) {
                     for (const d of m.diffPreview) {
-                        const sign = d.type === "add" ? `${T.success}+` : `${T.error}-`;
-                        const c = d.type === "add" ? T.success : T.error;
-                        lines.push(`     ${sign} ${c}${clipPlain(d.text, textWidth - 8)}${RESET}`);
+                        const sign = d.type === "add" ? "+" : "-";
+                        const style = d.type === "add" ? (T.diffAdd || T.success) : (T.diffDel || T.error);
+                        lines.push(`     ${style} ${sign} ${clipPlain(d.text, Math.max(12, textWidth - 10))} ${RESET}`);
                     }
                 }
                 if (Array.isArray(m.output) && m.output.length > 0) {
@@ -1624,12 +1712,25 @@ class WaHarnessTUI {
             return fitAnsi(" ".repeat(padLeft) + lineStr, W - 1);
         };
 
-        const boxWidth = Math.min(76, W - 4);
-        const promptBox = this.buildPromptBoxLines(boxWidth);
+        // 0. TOP OPENCODE SESSION TAB BAR (Row 0)
+        const spinnerChar = SPINNER_FRAMES[this.spinnerFrame % SPINNER_FRAMES.length];
+        screen[0] = buildTabBarLine({
+            tabs: this.tabs,
+            activeTabIdx: this.activeTabIdx,
+            width: W,
+            theme: T,
+            spinnerChar,
+            toast: this.toast
+        });
 
-        // 1. HOME ROUTE
-        if (this.messages.length === 0 && !this.inFlight) {
+        const isHome = this.messages.length === 0 && !this.inFlight;
+
+        // 1. CENTERED HOME ROUTE (OpenCode home.tsx: centered Logo + maxWidth=75 Prompt)
+        if (isHome) {
+            const boxWidth = Math.min(75, W - 4);
+            const promptBox = this.buildPromptBoxLines(boxWidth);
             const block = [];
+
             if (this.qrLines && this.qrLines.length > 0) {
                 block.push(centerLine(`${T.primary}${BOLD}Scan QR in WhatsApp -> Linked Devices${RESET}`));
                 block.push("");
@@ -1650,47 +1751,80 @@ class WaHarnessTUI {
                     block.push(centerLine(pLine, boxWidth));
                 }
                 block.push("");
-                const tip = `${T.muted}Type ${T.text}/${T.muted} for commands · ${T.text}/models${T.muted} for 29 models · ${T.text}tab${T.muted} build/plan · ${T.text}ctrl+p${T.muted} palette${RESET}`;
+                const tip = `${T.muted}Type ${T.text}/${T.muted} commands · ${T.text}tab${T.muted} build/plan · ${T.text}ctrl+t${T.muted} new tab · ${T.text}ctrl+b${T.muted} sidebar · ${T.text}ctrl+p${T.muted} palette${RESET}`;
                 block.push(centerLine(tip));
-
-                if (this.toast) {
-                    block.push("");
-                    block.push(centerLine(`${T.primary}● ${this.toast}${RESET}`));
-                }
             }
 
-            const startRow = Math.max(1, Math.floor((H - 2 - block.length) / 2));
+            const startRow = Math.max(2, Math.floor((H - 2 - block.length) / 2) + 1);
             for (let i = 0; i < block.length && startRow + i < H - 1; i++) {
                 screen[startRow + i] = block[i];
             }
         } else {
-            // 2. SESSION ROUTE
-            const topLeft = `  ${T.primary}▣${RESET} ${T.text}${BOLD}WAHARNESS${RESET}  ${T.muted}${shortPath(this.cwd)}${RESET}`;
-            const topRight = this.toast
-                ? `${T.primary}● ${this.toast}${RESET}  `
-                : `${T.muted}${this.activeModel}${RESET}  `;
-            const topGap = Math.max(1, W - 1 - visibleLen(topLeft) - visibleLen(topRight));
-            screen[0] = fitAnsi(topLeft + " ".repeat(topGap) + topRight, W - 1);
-            screen[1] = `${T.subtle}${"─".repeat(W - 1)}${RESET}`;
+            // 2. SESSION / CHAT ROUTE (OpenCode session/index.tsx + session-frame.tsx)
+            //    Left-padded full-width stream + bottom-left docked composer + optional 42-col right sidebar
+            const showSidebar = shouldShowSidebar(W, this.sidebarMode, true);
+            const sidebarW = showSidebar ? computeSidebarWidth(W) : 0;
+            const chatW = Math.max(32, W - 1 - sidebarW);
+            const padCols = chatW < 44 ? 1 : 2;
+            const leftPad = " ".repeat(padCols);
+            const innerChatW = Math.max(24, chatW - padCols * 2);
 
-            const convLines = this.buildConversationLines(boxWidth);
-            const availRows = Math.max(3, H - 2 - promptBox.length - 1);
-            const maxOffset = Math.max(0, convLines.length - availRows);
+            const bodyStartRow = 1;
+            const bodyHeight = Math.max(6, H - 2); // rows 1 .. H-2
+
+            const promptBox = this.buildPromptBoxLines(innerChatW);
+            const convLines = this.buildConversationLines(innerChatW);
+            // Reserve 1 row between stream and composer for "Jump to latest ↓" indicator
+            const streamRows = Math.max(2, bodyHeight - promptBox.length - 1);
+            const maxOffset = Math.max(0, convLines.length - streamRows);
             if (this.scrollOffset > maxOffset) this.scrollOffset = maxOffset;
 
             const endIdx = convLines.length - this.scrollOffset;
-            const startIdx = Math.max(0, endIdx - availRows);
+            const startIdx = Math.max(0, endIdx - streamRows);
             const visibleConv = convLines.slice(startIdx, endIdx);
 
-            const leftPad = " ".repeat(Math.max(0, Math.floor((W - boxWidth) / 2)));
+            // Build left chat column lines (pinned bottom-left like stickyStart="bottom")
+            const leftRows = new Array(bodyHeight).fill("");
+            const topBlank = Math.max(0, streamRows - visibleConv.length);
             for (let i = 0; i < visibleConv.length; i++) {
-                screen[2 + i] = fitAnsi(leftPad + visibleConv[i], W - 1);
+                leftRows[topBlank + i] = leftPad + visibleConv[i];
             }
 
-            const promptStartRow = H - 1 - promptBox.length;
+            // "Jump to latest ↓" hint row when scrolled up
+            if (this.scrollOffset > 0) {
+                const jumpLabel = `${T.info}Jump to latest ↓ (PgDn)${RESET}`;
+                const jGap = Math.max(0, innerChatW - visibleLen(jumpLabel));
+                leftRows[streamRows] = leftPad + " ".repeat(jGap) + jumpLabel;
+            }
+
+            // Bottom-left docked composer
+            const promptOffset = bodyHeight - promptBox.length;
             for (let i = 0; i < promptBox.length; i++) {
-                if (promptStartRow + i >= 2) {
-                    screen[promptStartRow + i] = centerLine(promptBox[i], boxWidth);
+                if (promptOffset + i >= 0 && promptOffset + i < bodyHeight) {
+                    leftRows[promptOffset + i] = leftPad + promptBox[i];
+                }
+            }
+
+            // Optional 42-col right sidebar (chat title, context tokens, modified files, context files)
+            const sidebarRows = showSidebar
+                ? buildSidebarLines({
+                      tab: this.activeTab,
+                      width: sidebarW,
+                      height: bodyHeight,
+                      theme: T,
+                      activeModel: this.activeModel,
+                      mode: this.mode,
+                      connected: this.transport.connected,
+                      shortCwd: shortPath(this.cwd)
+                  })
+                : null;
+
+            for (let i = 0; i < bodyHeight; i++) {
+                if (showSidebar && sidebarRows) {
+                    const leftCell = padVisible(leftRows[i], chatW);
+                    screen[bodyStartRow + i] = fitAnsi(leftCell + sidebarRows[i], W - 1);
+                } else {
+                    screen[bodyStartRow + i] = fitAnsi(leftRows[i], W - 1);
                 }
             }
         }
@@ -1698,8 +1832,9 @@ class WaHarnessTUI {
         // 3. BOTTOM FOOTER BAR
         const connBadge = this.transport.connected
             ? `${T.success}●${RESET} ${T.muted}zero-rate tunnel${RESET}`
-            : `${T.primary}◌${RESET} ${T.muted}connecting...${RESET}`;
-        const footLeft = `  ${T.muted}${shortPath(this.cwd)}${RESET}`;
+            : `${T.warning || T.primary}◌${RESET} ${T.muted}connecting...${RESET}`;
+        const sidebarHint = !isHome ? ` ${T.subtle}·${RESET} ${T.muted}ctrl+b sidebar${RESET}` : "";
+        const footLeft = `  ${T.muted}${shortPath(this.cwd)}${RESET}${sidebarHint}`;
         const verTag = this.updateAvailable
             ? `${T.primary}v${APP_VERSION} -> v${this.updateAvailable} (/update)${RESET}`
             : `${T.muted}v${APP_VERSION}${RESET}`;

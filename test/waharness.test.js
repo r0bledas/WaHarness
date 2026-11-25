@@ -24,6 +24,18 @@ const {
     grepFiles
 } = require("../cli/tools");
 
+const {
+    THEMES,
+    SESSION_SIDEBAR_WIDTH,
+    canonicalToolName,
+    shouldShowSidebar,
+    computeSidebarWidth,
+    buildTabBarLine,
+    buildSidebarLines,
+    stripAnsi,
+    visibleLen
+} = require("../cli/layout");
+
 test("security: redactSecrets masks common tokens and keys", () => {
     const sample = [
         "gh=ghp_1234567890abcdef1234567890abcdef1234",
@@ -157,4 +169,54 @@ test("tools: readFile line ranges, writeFile, editFile, undoLastEdit, listDirect
     } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true });
     }
+});
+
+test("layout: OpenCode v2 themes, sidebar breakpoints, tab bar, and sidebar contents", () => {
+    assert.ok(THEMES.opencode.bgRaised);
+    assert.ok(THEMES["opencode-light"].bgBase);
+    assert.equal(canonicalToolName("bash"), "shell");
+    assert.equal(canonicalToolName("read_file"), "read");
+    assert.equal(canonicalToolName("write_file"), "write");
+
+    // Sidebar auto-shows only when in chat AND width > 120
+    assert.equal(shouldShowSidebar(140, "auto", false), false);
+    assert.equal(shouldShowSidebar(100, "auto", true), false);
+    assert.equal(shouldShowSidebar(140, "auto", true), true);
+    assert.equal(shouldShowSidebar(140, "hide", true), false);
+    assert.equal(shouldShowSidebar(100, "show", true), true);
+    assert.equal(computeSidebarWidth(140), SESSION_SIDEBAR_WIDTH);
+
+    const tabs = [
+        { id: "1", title: "Fix auth flow", busy: false, unread: false },
+        { id: "2", title: "New session", busy: true, unread: false }
+    ];
+    const bar = buildTabBarLine({ tabs, activeTabIdx: 0, width: 120, theme: THEMES.opencode });
+    const plainBar = stripAnsi(bar);
+    assert.ok(plainBar.includes("Fix auth flow"));
+    assert.ok(plainBar.includes("New session"));
+    assert.ok(visibleLen(bar) <= 119);
+
+    const sidebar = buildSidebarLines({
+        tab: {
+            title: "Fix auth flow",
+            messages: [{ role: "user", text: "Fix auth flow" }],
+            modifiedFiles: new Map([["cli/tui.js", { added: 12, removed: 3 }]]),
+            contextFiles: new Set(["README.md"]),
+            toolCount: 2
+        },
+        width: 42,
+        height: 22,
+        theme: THEMES.opencode,
+        activeModel: "gemini-4-argon-medium",
+        mode: "build",
+        connected: true,
+        shortCwd: "~/WaHarness"
+    });
+    assert.equal(sidebar.length, 22);
+    const plainSide = sidebar.map(stripAnsi).join("\n");
+    assert.ok(plainSide.includes("Fix auth flow"));
+    assert.ok(plainSide.includes("Context"));
+    assert.ok(plainSide.includes("Modified Files"));
+    assert.ok(plainSide.includes("cli/tui.js"));
+    assert.ok(plainSide.includes("README.md"));
 });
