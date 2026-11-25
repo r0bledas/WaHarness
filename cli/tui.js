@@ -8,7 +8,7 @@ const https = require("https");
 const WhatsAppTransport = require("./transport");
 const { executeCommand, readFile, writeFile, editFile, undoLastEdit, listDirectory, globFiles, grepFiles } = require("./tools");
 
-const APP_VERSION = "1.2.2";
+const APP_VERSION = "1.2.3";
 const CONFIG_DIR = path.join(os.homedir(), ".waharness");
 const CONFIG_PATH = path.join(CONFIG_DIR, "config.json");
 
