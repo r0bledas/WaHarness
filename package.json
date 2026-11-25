@@ -8,7 +8,8 @@
     "wah": "./cli/bin/waharness"
   },
   "scripts": {
-    "start": "node cli/tui.js"
+    "start": "node cli/tui.js",
+    "test": "node --test \"test/*.test.js\""
   },
   "keywords": [
     "ai",

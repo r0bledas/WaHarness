@@ -63,7 +63,28 @@ const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = requi
 const path = require("path");
 const os = require("os");
 const fs = require("fs");
+const crypto = require("crypto");
 const EventEmitter = require("events");
+const { wrapPacket, unwrapPacket, isAuthorizedSender } = require("./security");
+
+const INBOUND_PREFIXES = [
+    "!WAH_STREAM:",
+    "!WAH_TOOL_REQ:",
+    "!WAH_DONE:",
+    "!WAH_CHUNK:",
+    "!CLI_STREAM:",
+    "!CLI_TOOL_REQ:",
+    "!CLI_DONE:"
+];
+
+const OUTBOUND_PREFIXES = [
+    "!WAH_PROMPT:",
+    "!WAH_TOOL_RES:",
+    "!WAH_POLL:",
+    "!WAH_CMD:",
+    "!WAH_CHUNK:",
+    "!CLI_TOOL_RES:"
+];
 
 class WhatsAppTransport extends EventEmitter {
     constructor(authDir) {
@@ -93,6 +114,11 @@ class WhatsAppTransport extends EventEmitter {
         this.connected = false;
         this.everConnected = false;
         this.targetChat = process.env.WAHARNESS_TARGET_JID || null;
+        this.hmacSecret = process.env.WAHARNESS_HMAC_SECRET || "";
+        this.allowedJids = (process.env.WAHARNESS_ALLOWED_JIDS || "")
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean);
     }
 
     async init() {
@@ -129,14 +155,11 @@ class WhatsAppTransport extends EventEmitter {
                 this.everConnected = true;
 
                 const rawUser = this.sock?.user?.id || "";
-                if (rawUser) {
+                if (rawUser && !process.env.WAHARNESS_TARGET_JID) {
                     const phone = rawUser.split(":")[0].split("@")[0];
                     if (phone) {
                         this.targetChat = `${phone}@s.whatsapp.net`;
                     }
-                }
-                if (!this.targetChat) {
-                    this.targetChat = process.env.WAHARNESS_TARGET_JID || null;
                 }
                 this.emit("ready", { targetChat: this.targetChat, isFirst });
             }
@@ -153,16 +176,32 @@ class WhatsAppTransport extends EventEmitter {
                 ).trim();
                 if (!text) continue;
 
+                const matchedPrefix = INBOUND_PREFIXES.find((p) => text.startsWith(p));
+                if (!matchedPrefix) continue;
+
                 if (
-                    text.startsWith("!WAH_STREAM:") ||
-                    text.startsWith("!WAH_TOOL_REQ:") ||
-                    text.startsWith("!WAH_DONE:") ||
-                    text.startsWith("!CLI_STREAM:") ||
-                    text.startsWith("!CLI_TOOL_REQ:") ||
-                    text.startsWith("!CLI_DONE:")
+                    !isAuthorizedSender({
+                        remoteJid: from,
+                        targetChat: this.targetChat,
+                        allowedJids: this.allowedJids,
+                        fromMe: Boolean(msg.key?.fromMe)
+                    })
                 ) {
-                    this.emit("message", { from, text, raw: msg });
+                    this.emit("security_warning", { reason: "unauthorized_sender", from });
+                    continue;
                 }
+
+                const unwrapped = unwrapPacket(matchedPrefix, text, this.hmacSecret);
+                if (!unwrapped.ok) {
+                    this.emit("security_warning", { reason: unwrapped.error, from });
+                    continue;
+                }
+
+                this.emit("message", {
+                    from,
+                    text: `${matchedPrefix}${unwrapped.payloadStr}`,
+                    raw: msg
+                });
             }
         });
     }
@@ -173,9 +212,30 @@ class WhatsAppTransport extends EventEmitter {
             throw new Error("WhatsApp transport is not connected.");
         }
         if (!dest) {
-            throw new Error("No destination WhatsApp chat specified.");
+            throw new Error("No destination WhatsApp chat specified. Set WAHARNESS_TARGET_JID or pair your WhatsApp account.");
         }
-        return await this.sock.sendMessage(dest, { text });
+        let wireText = text;
+        if (this.hmacSecret && typeof text === "string") {
+            const pfx = OUTBOUND_PREFIXES.find((p) => text.startsWith(p));
+            if (pfx) {
+                wireText = wrapPacket(pfx, text.slice(pfx.length), this.hmacSecret);
+            }
+        }
+        return await this.sock.sendMessage(dest, { text: wireText });
+    }
+
+    async sendChunkedPacket(prefix, payloadObj, { maxChunkChars = 10000, toChat = null } = {}) {
+        const serialized = typeof payloadObj === "string" ? payloadObj : JSON.stringify(payloadObj);
+        if (serialized.length <= maxChunkChars) {
+            return await this.sendMessage(`${prefix}${serialized}`, toChat);
+        }
+        const chunkId = crypto.randomBytes(4).toString("hex");
+        const total = Math.ceil(serialized.length / maxChunkChars);
+        for (let idx = 0; idx < total; idx++) {
+            const data = serialized.slice(idx * maxChunkChars, (idx + 1) * maxChunkChars);
+            const pkt = `!WAH_CHUNK:${JSON.stringify({ id: chunkId, prefix, idx, total, data })}`;
+            await this.sendMessage(pkt, toChat);
+        }
     }
 }
 

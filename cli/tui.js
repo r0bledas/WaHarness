@@ -6,7 +6,7 @@ const os = require("os");
 const path = require("path");
 const https = require("https");
 const WhatsAppTransport = require("./transport");
-const { executeCommand, readFile, writeFile, editFile, undoLastEdit, listDirectory } = require("./tools");
+const { executeCommand, readFile, writeFile, editFile, undoLastEdit, listDirectory, globFiles, grepFiles } = require("./tools");
 
 const APP_VERSION = "1.2.2";
 const CONFIG_DIR = path.join(os.homedir(), ".waharness");
@@ -1230,6 +1230,34 @@ class WaHarnessTUI {
     }
 
     async handleInbound({ text }) {
+        if (text.startsWith("!WAH_CHUNK:")) {
+            try {
+                const chunk = JSON.parse(text.substring("!WAH_CHUNK:".length).trim());
+                if (!this.chunkBuffers) this.chunkBuffers = new Map();
+                const key = chunk.id;
+                if (!key || !chunk.total) return;
+                if (!this.chunkBuffers.has(key)) {
+                    this.chunkBuffers.set(key, {
+                        prefix: chunk.prefix || "!WAH_DONE:",
+                        total: chunk.total,
+                        parts: new Array(chunk.total),
+                        received: 0
+                    });
+                }
+                const buf = this.chunkBuffers.get(key);
+                if (buf.parts[chunk.idx] === undefined) {
+                    buf.parts[chunk.idx] = chunk.data || "";
+                    buf.received++;
+                }
+                if (buf.received >= buf.total) {
+                    this.chunkBuffers.delete(key);
+                    const reassembled = `${buf.prefix}${buf.parts.join("")}`;
+                    return await this.handleInbound({ text: reassembled });
+                }
+            } catch (_) {}
+            return;
+        }
+
         if (text.startsWith("!WAH_TOOL_REQ:") || text.startsWith("!CLI_TOOL_REQ:")) {
             const pfx = text.startsWith("!WAH_") ? "!WAH_" : "!CLI_";
             const rawJson = text.split(/:(.+)/s)[1] || "{}";
@@ -1238,29 +1266,45 @@ class WaHarnessTUI {
                 if (this.completedIds.has(`tool_${req.id}`)) return;
                 this.completedIds.add(`tool_${req.id}`);
 
-                const detail = req.cmd || req.path || ".";
+                const detail = req.cmd || req.pattern || req.path || ".";
                 this.updateSpinner(`Running ${req.action}: ${detail}`);
 
                 let result = {};
                 if ((req.action === "write_file" || req.action === "edit_file") && this.mode === "plan") {
                     result = { error: "Blocked: WaHarness is currently in read-only PLAN mode." };
                 } else if (req.action === "bash" || req.action === "exec") {
-                    result = await executeCommand(req.cmd, req.cwd || this.cwd);
+                    result = await executeCommand(req.cmd, req.cwd || this.cwd, req.timeout || 180);
                 } else if (req.action === "read_file") {
-                    result = readFile(req.path, req.cwd || this.cwd);
+                    const startLine = req.startLine ?? req.start_line ?? null;
+                    const endLine = req.endLine ?? req.end_line ?? null;
+                    result = readFile(req.path, req.cwd || this.cwd, startLine, endLine);
                 } else if (req.action === "write_file") {
                     result = writeFile(req.path, req.content, req.cwd || this.cwd);
                 } else if (req.action === "edit_file") {
                     result = editFile(req.path, req.target, req.replacement, req.cwd || this.cwd);
                 } else if (req.action === "list_dir") {
                     result = listDirectory(req.path || ".", req.cwd || this.cwd);
+                } else if (req.action === "grep" || req.action === "search") {
+                    result = grepFiles(req.pattern, req.path || ".", req.cwd || this.cwd, {
+                        maxResults: req.maxResults || 100,
+                        ignoreCase: Boolean(req.ignoreCase)
+                    });
+                } else if (req.action === "glob" || req.action === "find") {
+                    result = globFiles(req.pattern || "**/*", req.path || ".", req.cwd || this.cwd, {
+                        maxResults: req.maxResults || 200
+                    });
+                } else {
+                    result = { error: `Unknown tool action: ${req.action}` };
                 }
 
-                if (result.out && result.out.length > 12000) {
-                    result.out = result.out.slice(0, 12000) + "\n...[truncated]...";
-                }
-                if (result.content && result.content.length > 12000) {
-                    result.content = result.content.slice(0, 12000) + "\n...[truncated]...";
+                const useChunked = process.env.WAHARNESS_CHUNKED_RES === "1";
+                if (!useChunked) {
+                    if (result.out && result.out.length > 12000) {
+                        result.out = result.out.slice(0, 12000) + "\n...[truncated]...";
+                    }
+                    if (result.content && result.content.length > 12000) {
+                        result.content = result.content.slice(0, 12000) + "\n...[truncated]...";
+                    }
                 }
 
                 this.messages.push({
@@ -1275,8 +1319,12 @@ class WaHarnessTUI {
                 });
                 this.updateSpinner(`Thinking (${this.activeModel})...`);
 
-                const replyPkt = `${pfx}TOOL_RES:` + JSON.stringify({ id: req.id, result });
-                await this.transport.sendMessage(replyPkt);
+                if (useChunked) {
+                    await this.transport.sendChunkedPacket(`${pfx}TOOL_RES:`, { id: req.id, result });
+                } else {
+                    const replyPkt = `${pfx}TOOL_RES:` + JSON.stringify({ id: req.id, result });
+                    await this.transport.sendMessage(replyPkt);
+                }
             } catch (e) {
                 this.messages.push({ role: "system", text: `✗ Tool error: ${e.message}` });
                 this.render();

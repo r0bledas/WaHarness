@@ -7,6 +7,41 @@ import uuid
 MAGIC_REQ = '!RPC_REQ:'
 MAGIC_RES = '!RPC_RES:'
 
+WAH_PREFIXES = (
+    '!WAH_PROMPT:',
+    '!WAH_TOOL_REQ:',
+    '!WAH_TOOL_RES:',
+    '!WAH_DONE:',
+    '!WAH_POLL:',
+    '!WAH_CMD:',
+    '!WAH_CHUNK:',
+    '!WAH_STREAM:',
+)
+
+def create_wah_packet(prefix: str, data: dict, secret: str = '') -> str:
+    if not prefix.endswith(':'):
+        prefix = prefix + ':'
+    dumped = json.dumps(data, separators=(',', ':'))
+    if not secret:
+        return prefix + dumped
+    sig = sign_payload(dumped, secret)
+    return prefix + json.dumps({'p': dumped, 's': sig}, separators=(',', ':'))
+
+def parse_wah_packet(raw_message: str, secret: str = '') -> tuple:
+    raw = raw_message.strip()
+    matched = next((p for p in WAH_PREFIXES if raw.startswith(p)), None)
+    if not matched:
+        return None, None
+    body = raw[len(matched):].strip()
+    parsed = json.loads(body)
+    if isinstance(parsed, dict) and isinstance(parsed.get('p'), str) and isinstance(parsed.get('s'), str):
+        if secret and not verify_signature(parsed['p'], parsed['s'], secret):
+            raise ValueError('Invalid HMAC signature on !WAH_ packet')
+        return matched, json.loads(parsed['p'])
+    if secret:
+        raise ValueError('Missing HMAC signature envelope on !WAH_ packet')
+    return matched, parsed
+
 def sign_payload(payload_str: str, secret: str) -> str:
     if not secret:
         return ''
